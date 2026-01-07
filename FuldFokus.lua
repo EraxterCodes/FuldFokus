@@ -147,8 +147,8 @@ end
 local function FF_Animator_UpdateEmoteInFontString(fontstring, widthOverride, heightOverride, fixedFrame)
     local txt = fontstring:GetText()
     if not txt then return end
-    for emoteTextureString in txt:gmatch("(|TInterface\\AddOns\\FuldFokusEmotes\\Emotes.-|t)") do
-        local imagepath = emoteTextureString:match("|T(Interface\\AddOns\\FuldFokusEmotes\\Emotes.-%.tga).-|t")
+    for emoteTextureString in txt:gmatch("(|TInterface\\AddOns\\FuldFokus\\Emotes.-|t)") do
+        local imagepath = emoteTextureString:match("|T(Interface\\AddOns\\FuldFokus\\Emotes.-%.tga).-|t")
         local animdata = TwitchEmotes_animation_metadata[imagepath]
         if animdata then
             local framenum = fixedFrame ~= nil and fixedFrame or TwitchEmotes_GetCurrentFrameNum(animdata)
