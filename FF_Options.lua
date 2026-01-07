@@ -8,14 +8,14 @@ local ADDON_NAME = ...
 FFE = FFE or {}
 
 -- Pretty print
-local function ok(msg) print("|cffe5a472FFE|r " .. tostring(msg)) end
+local function ok(msg) print("|cffe5a472FF|r " .. tostring(msg)) end
 
 -- Apply the typed key (used by Set button and Enter in the edit box)
 local function ApplyEditBoxSelection(keyEdit, previewFS)
   local k = keyEdit:GetText() or ""
-  if FFE.SetSelectedEmote then FFE.SetSelectedEmote(k) end
+  if FF.SetSelectedEmote then FF.SetSelectedEmote(k) end
   if previewFS then
-    previewFS:SetText((FFE.TextureStringForKey and FFE.TextureStringForKey(FFE_DB.selected, FFE_DB.iconSize)) or "")
+    previewFS:SetText((FF.TextureStringForKey and FF.TextureStringForKey(FF_DB.selected, FF_DB.iconSize)) or "")
   end
 end
 
@@ -38,11 +38,11 @@ local enable = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButt
 enable:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -12)
 enable.Text:SetText("Enable icons in Details")
 enable:SetScript("OnClick", function(self)
-  FFE_DB.enabled = self:GetChecked() and true or false
-  ok("Icons " .. (FFE_DB.enabled and "enabled" or "disabled") .. ".")
-  if FFE.RefreshAllDisplayNames then FFE.RefreshAllDisplayNames() end
-  if FFE.RefreshDetails then FFE.RefreshDetails() end
-  if FFE.UpdateTicker then FFE.UpdateTicker() end
+  FF_DB.enabled = self:GetChecked() and true or false
+  ok("Icons " .. (FF_DB.enabled and "enabled" or "disabled") .. ".")
+  if FF.RefreshAllDisplayNames then FF.RefreshAllDisplayNames() end
+  if FF.RefreshDetails then FF.RefreshDetails() end
+  if FF.UpdateTicker then FF.UpdateTicker() end
 end)
 
 -- Animate
@@ -50,11 +50,11 @@ local animate = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckBut
 animate:SetPoint("TOPLEFT", enable, "BOTTOMLEFT", 0, -12)
 animate.Text:SetText("Animate emotes in Details (OBS: this will increase Details update interval)")
 animate:SetScript("OnClick", function(self)
-  FFE_DB.animate = self:GetChecked() and true or false
-  ok("Details emote animation " .. (FFE_DB.animate and "enabled" or "disabled") .. ".")
-  if FFE.RefreshAllDisplayNames then FFE.RefreshAllDisplayNames() end
-  if FFE.RefreshDetails then FFE.RefreshDetails() end
-  if FFE.UpdateTicker then FFE.UpdateTicker() end
+  FF_DB.animate = self:GetChecked() and true or false
+  ok("Details emote animation " .. (FF_DB.animate and "enabled" or "disabled") .. ".")
+  if FF.RefreshAllDisplayNames then FF.RefreshAllDisplayNames() end
+  if FF.RefreshDetails then FF.RefreshDetails() end
+  if FF.UpdateTicker then FF.UpdateTicker() end
 end)
 
 -- Easter eggs (NEW)
@@ -62,11 +62,11 @@ local easter = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButt
 easter:SetPoint("TOPLEFT", animate, "BOTTOMLEFT", 0, -12)
 easter.Text:SetText("Enable Easter eggs")
 easter:SetScript("OnClick", function(self)
-  FFE_DB.easter = self:GetChecked() and true or false
-  ok("Easter eggs " .. (FFE_DB.easter and "enabled" or "disabled") .. ".")
-  if FFE.RefreshAllDisplayNames then FFE.RefreshAllDisplayNames() end
-  if FFE.RefreshDetails then FFE.RefreshDetails() end
-  if FFE.UpdateTicker then FFE.UpdateTicker() end
+  FF_DB.easter = self:GetChecked() and true or false
+  ok("Easter eggs " .. (FF_DB.easter and "enabled" or "disabled") .. ".")
+  if FF.RefreshAllDisplayNames then FF.RefreshAllDisplayNames() end
+  if FF.RefreshDetails then FF.RefreshDetails() end
+  if FF.UpdateTicker then FF.UpdateTicker() end
 end)
 
 -- Size slider
@@ -81,9 +81,9 @@ FFE_SizeSliderHigh:SetText("64")
 FFE_SizeSliderText:SetText("Icon Size")
 
 size:SetScript("OnValueChanged", function(self, v)
-  if FFE.SetIconSize then FFE.SetIconSize(v) end
+  if FF.SetIconSize then FF.SetIconSize(v) end
   if _G.FFE_Preview then
-    _G.FFE_Preview:SetText((FFE.TextureStringForKey and FFE.TextureStringForKey(FFE_DB.selected, FFE_DB.iconSize)) or "")
+    _G.FFE_Preview:SetText((FF.TextureStringForKey and FF.TextureStringForKey(FF_DB.selected, FF_DB.iconSize)) or "")
   end
 end)
 
@@ -118,10 +118,10 @@ clearBtn:SetPoint("LEFT", setBtn, "RIGHT", 8, 0)
 clearBtn:SetSize(100, 22)
 clearBtn:SetText("Clear")
 clearBtn:SetScript("OnClick", function()
-  if FFE.Clear then FFE.Clear() end
+  if FF.Clear then FF.Clear() end
   keyEdit:SetText("")
   if _G.FFE_Preview then
-    _G.FFE_Preview:SetText((FFE.TextureStringForKey and FFE.TextureStringForKey(FFE_DB.selected, FFE_DB.iconSize)) or "")
+    _G.FFE_Preview:SetText((FF.TextureStringForKey and FF.TextureStringForKey(FF_DB.selected, FF_DB.iconSize)) or "")
   end
 end)
 
@@ -136,16 +136,16 @@ preview:SetText("")
 
 -- Populate widgets from DB
 local function RefreshPanel()
-  if not FFE_DB then return end
-  if FFE_DB.enabled == nil then FFE_DB.enabled = true end
-  if FFE_DB.animate == nil then FFE_DB.animate = true end
-  if FFE_DB.easter  == nil then FFE_DB.easter  = true end  -- default ON
-  enable:SetChecked(FFE_DB.enabled ~= false)
-  animate:SetChecked(FFE_DB.animate ~= false)
-  easter:SetChecked(FFE_DB.easter  ~= false)
-  size:SetValue(FFE_DB.iconSize or 16)
-  keyEdit:SetText(FFE_DB.selected or "")
-  preview:SetText((FFE.TextureStringForKey and FFE.TextureStringForKey(FFE_DB.selected, FFE_DB.iconSize)) or "")
+  if not FF_DB then return end
+  if FF_DB.enabled == nil then FF_DB.enabled = true end
+  if FF_DB.animate == nil then FF_DB.animate = true end
+  if FF_DB.easter  == nil then FF_DB.easter  = true end  -- default ON
+  enable:SetChecked(FF_DB.enabled ~= false)
+  animate:SetChecked(FF_DB.animate ~= false)
+  easter:SetChecked(FF_DB.easter  ~= false)
+  size:SetValue(FF_DB.iconSize or 16)
+  keyEdit:SetText(FF_DB.selected or "")
+  preview:SetText((FF.TextureStringForKey and FF.TextureStringForKey(FF_DB.selected, FF_DB.iconSize)) or "")
 end
 
 panel.refresh = RefreshPanel
@@ -162,16 +162,16 @@ else
   end
 end
 
-FFE._optionsPanel = panel
-FFE._settingsCategory = category or nil
+FF._optionsPanel = panel
+FF._settingsCategory = category or nil
 
-function FFE.OpenOptions()
-  if Settings and Settings.OpenToCategory and FFE._settingsCategory then
-    local id = FFE._settingsCategory.ID or FFE._settingsCategory
+function FF.OpenOptions()
+  if Settings and Settings.OpenToCategory and FF._settingsCategory then
+    local id = FF._settingsCategory.ID or FF._settingsCategory
     Settings.OpenToCategory(id)
-  elseif InterfaceOptionsFrame_OpenToCategory and FFE._optionsPanel then
-    InterfaceOptionsFrame_OpenToCategory(FFE._optionsPanel)
-    InterfaceOptionsFrame_OpenToCategory(FFE._optionsPanel)
+  elseif InterfaceOptionsFrame_OpenToCategory and FF._optionsPanel then
+    InterfaceOptionsFrame_OpenToCategory(FF._optionsPanel)
+    InterfaceOptionsFrame_OpenToCategory(FF._optionsPanel)
   else
     ok("Open via Game Menu → Options → AddOns → " .. (panel.name or "FuldFokus Emotes"))
   end

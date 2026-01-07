@@ -1,0 +1,19 @@
+## Interface: 110200
+## Title: |TInterface\AddOns\FuldFokus\Emotes\FuldFokus\FuldFokus:0|tFuldFokus|TInterface\AddOns\FuldFokus\Emotes\FuldFokus\FuldFokus:0|t
+## IconTexture: Interface\AddOns\FuldFokus\Emotes\FuldFokus.tga
+## Author: Eraxter
+## Notes: Combines FuldFokus emotes and betting system. Extends TwitchEmotes with guild emotes and adds guild betting features.
+## Version: 3.0
+## RequiredDeps: TwitchEmotes
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## X-Curse-Project-ID: 1329121
+## X-WAGO-ID: n6VPXEGd
+## OptionalDeps: Details, DetailsFramework
+## SavedVariables: FF_DB, FuldStonksDB
+
+FuldFokus.lua
+FF_Details.lua
+FF_Commands.lua
+FF_Options.lua
+FuldStonks.lua
