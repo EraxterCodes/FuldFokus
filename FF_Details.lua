@@ -1,13 +1,13 @@
 local addonName = ...
 
 FF_DB = FF_DB or { iconSize = 16, selected = "", rules = {}, animate = true }
-FFE = FFE or {}
+FF = FF or {}
 FF.debug = false
 
 local function ok(msg) print("|cffe5a472FF|r " .. tostring(msg)) end
 local function dprint(msg) if FF.debug then ok(msg) end end
 
-FF.BASE_DIR = "Interface\\AddOns\\FuldFokusEmotes\\Emotes\\FuldFokus\\"
+FF.BASE_DIR = "Interface\\AddOns\\FuldFokus\\Emotes\\FuldFokus\\"
 
 local PREFIX = "FF"
 local _pName, _pRealm = UnitFullName("player")

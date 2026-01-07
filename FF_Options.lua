@@ -1,11 +1,11 @@
--- FFE_Options.lua - Options panel for FuldFokusEmotes
+-- FF_Options.lua - Options panel for FuldFokus addon
 -- This version:
 --  - Keeps Set/Clear (Clear next to Set), no Select or Sync
 --  - Adds "Enable Easter eggs" (default ON)
 --  - Enter in the edit box applies (same as Set)
 
 local ADDON_NAME = ...
-FFE = FFE or {}
+FF = FF or {}
 
 -- Pretty print
 local function ok(msg) print("|cffe5a472FF|r " .. tostring(msg)) end
