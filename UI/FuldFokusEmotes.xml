@@ -100,7 +100,7 @@ Revert PowaBarSliderTemplate to inherit from OptionsSliderTemplate if it's fixed
     <Scripts>
       <OnLoad>
         if SettingsPanel then self:SetParent(SettingsPanel); else self:SetParent(InterfaceOptionsFramePanelContainer) end;
-        self.name = "FuldFokusEmotes";
+        self.name = "FuldFokus";
         local category = Settings.RegisterCanvasLayoutCategory(self, self.name)
         Settings.RegisterAddOnCategory(category)
 
