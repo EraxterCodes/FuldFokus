@@ -51,6 +51,8 @@
         "GameTooltip_AddErrorLine",
         "ItemRefTooltip",
         "SlashCmdList",
-        "Settings"
+        "Settings",
+        "LE_PARTY_CATEGORY_INSTANCE",
+        "SettingsPanel"
     ]
 }

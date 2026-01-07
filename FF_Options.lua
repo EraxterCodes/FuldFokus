@@ -23,11 +23,11 @@ end
 -- Panel + widgets
 -- --------------------------------------------------------------------
 local panel = CreateFrame("Frame")
-panel.name = "FuldFokus Emotes"
+panel.name = "FuldFokus"
 
 local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 16, -16)
-title:SetText("FuldFokus Emotes")
+title:SetText("FuldFokus")
 
 local sub = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
@@ -133,6 +133,8 @@ previewLabel:SetText("Preview:")
 local preview = panel:CreateFontString("FFE_Preview", "ARTWORK", "GameFontHighlightLarge")
 preview:SetPoint("LEFT", previewLabel, "RIGHT", 8, 0)
 preview:SetText("")
+
+
 
 -- Populate widgets from DB
 local function RefreshPanel()
