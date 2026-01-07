@@ -40,8 +40,16 @@ local playerFullName = (playerRealm and playerRealm ~= "" and (playerName .. "-"
 
 -- Helper function for debug output
 local function DebugPrint(msg)
+    -- Suppress heartbeat-related debug (too chatty)
+    local s = tostring(msg)
+    if type(s) == "string" then
+        local lower = s:lower()
+        if s:find("HB", 1, true) or lower:find("heartbeat", 1, true) then
+            return
+        end
+    end
     if FuldStonksDB.debug == true then
-        print(COLOR_GREEN .. "FuldStonks [DEBUG]" .. COLOR_RESET .. " " .. tostring(msg))
+        print(COLOR_GREEN .. "FuldStonks [DEBUG]" .. COLOR_RESET .. " " .. s)
     end
 end
 
