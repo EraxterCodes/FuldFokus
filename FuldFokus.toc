@@ -13,7 +13,6 @@
 
 FuldFokusEmotes.lua
 FFE_Commands.lua
-FFE_Options.lua
 FuldStonks.lua
 FS_Commands.lua
-FS_Options.lua
+Options.lua
