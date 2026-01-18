@@ -1,5 +1,7 @@
--- FFE_Options.lua - Options panel for FuldFokusEmotes
-local ADDON_NAME = ...
+-- FFE_Options.lua - Options panel for FuldFokus Emotes
+-- Part of the FuldFokus addon
+
+local ADDON_NAME = "FuldFokus"
 FFE = FFE or {}
 
 -- Pretty print
@@ -17,7 +19,7 @@ title:SetText("FuldFokus Emotes")
 
 local sub = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-sub:SetText("Configure emote settings for FuldFokusEmotes.")
+sub:SetText("Configure emote settings for FuldFokus Emotes.")
 
 -- Easter eggs
 local easter = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
@@ -47,7 +49,7 @@ panel:SetScript("OnShow", RefreshPanel)
 -- Register panel
 local category
 if Settings and Settings.RegisterCanvasLayoutCategory then
-  category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+  category = Settings.RegisterCanvasLayoutCategory(panel, "FuldFokus")
   Settings.RegisterAddOnCategory(category)
 else
   if InterfaceOptions_AddCategory then
@@ -74,7 +76,7 @@ end
 local init = CreateFrame("Frame")
 init:RegisterEvent("ADDON_LOADED")
 init:SetScript("OnEvent", function(_, ev, name)
-  if name == ADDON_NAME then
+  if name == "FuldFokus" then
     C_Timer.After(0.1, RefreshPanel)
   end
 end)
