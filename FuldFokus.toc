@@ -1,4 +1,4 @@
-## Interface: 110200
+## Interface: 120000
 ## Title: |TInterface\AddOns\FuldFokus\Emotes\FuldFokus\FuldFokus:0|tFuldFokus|TInterface\AddOns\FuldFokus\Emotes\FuldFokus\FuldFokus:0|t
 ## IconTexture: Interface\AddOns\FuldFokus\Emotes\FuldFokus.tga
 ## Author: Eraxter
