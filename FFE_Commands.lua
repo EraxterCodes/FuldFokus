@@ -25,7 +25,7 @@ SlashCmdList["FFE"] = function(msg)
 
   elseif cmd == "list" then
     print("|cffe5a472FFE|r Emotes folder:")
-    print(" Interface\\AddOns\\FuldFokusEmotes\\Emotes\\FuldFokus")
+    print(" Interface\\AddOns\\FuldFokus\\Emotes\\FuldFokus")
     print("Emotes are integrated into TwitchEmotes and accessible via the emote menu.")
 
   else
