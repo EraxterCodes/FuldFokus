@@ -56,26 +56,25 @@ local emotesSub = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontHighligh
 emotesSub:SetPoint("TOPLEFT", emotesTitle, "BOTTOMLEFT", 0, -8)
 emotesSub:SetText("Configure emote settings for FuldFokus Emotes.")
 
--- Easter eggs checkbox
-local easter = CreateFrame("CheckButton", nil, emotesPanel, "InterfaceOptionsCheckButtonTemplate")
-easter:SetPoint("TOPLEFT", emotesSub, "BOTTOMLEFT", 0, -12)
-easter.Text:SetText("Enable Easter eggs")
-easter:SetScript("OnClick", function(self)
-  FFE_DB.easter = self:GetChecked() and true or false
-  ok("Easter eggs " .. (FFE_DB.easter and "enabled" or "disabled") .. ".")
-end)
-
--- Info text
+-- Info text explaining the removal of options
 local emotesInfo = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-emotesInfo:SetPoint("TOPLEFT", easter, "BOTTOMLEFT", 0, -24)
-emotesInfo:SetText("Emotes are integrated into TwitchEmotes and accessible via the emote dropdown.")
+emotesInfo:SetPoint("TOPLEFT", emotesSub, "BOTTOMLEFT", 0, -12)
+emotesInfo:SetText("All of the options were related to the Details emotes which is now gone. RIP.")
 emotesInfo:SetTextColor(0.7, 0.7, 0.7)
+
+local emotesInfo2 = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+emotesInfo2:SetPoint("TOPLEFT", emotesInfo, "BOTTOMLEFT", 0, -4)
+emotesInfo2:SetText("Don't have anything to put here now but I don't wanna remake it in case I ever do.")
+emotesInfo2:SetTextColor(0.7, 0.7, 0.7)
+
+local emotesInfo3 = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+emotesInfo3:SetPoint("TOPLEFT", emotesInfo2, "BOTTOMLEFT", 0, -4)
+emotesInfo3:SetText("Now stop reading this.")
+emotesInfo3:SetTextColor(0.7, 0.7, 0.7)
 
 -- Populate emotes panel from DB
 local function RefreshEmotesPanel()
-  if not FFE_DB then return end
-  if FFE_DB.easter == nil then FFE_DB.easter = true end  -- default ON
-  easter:SetChecked(FFE_DB.easter ~= false)
+  -- No settings to refresh anymore
 end
 
 emotesPanel.refresh = RefreshEmotesPanel
