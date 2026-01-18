@@ -8,21 +8,51 @@ FFE = FFE or {}
 local function ok(msg) print("|cffe5a472FFE|r " .. tostring(msg)) end
 
 -- --------------------------------------------------------------------
--- Panel + widgets
+-- Main Category Panel (empty, just for organization)
 -- --------------------------------------------------------------------
-local panel = CreateFrame("Frame")
-panel.name = "FuldFokus Emotes"
+local mainPanel = CreateFrame("Frame")
+mainPanel.name = "FuldFokus"
 
-local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+local mainTitle = mainPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+mainTitle:SetPoint("TOPLEFT", 16, -16)
+mainTitle:SetText("FuldFokus")
+
+local mainSub = mainPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+mainSub:SetPoint("TOPLEFT", mainTitle, "BOTTOMLEFT", 0, -8)
+mainSub:SetText("Combined addon with emotes and guild betting system.")
+
+local mainInfo = mainPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+mainInfo:SetPoint("TOPLEFT", mainSub, "BOTTOMLEFT", 0, -16)
+mainInfo:SetText("• Use /ffe commands for emotes")
+mainInfo:SetTextColor(0.7, 0.7, 0.7)
+
+local mainInfo2 = mainPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+mainInfo2:SetPoint("TOPLEFT", mainInfo, "BOTTOMLEFT", 0, -4)
+mainInfo2:SetText("• Use /fs commands for betting system")
+mainInfo2:SetTextColor(0.7, 0.7, 0.7)
+
+local mainInfo3 = mainPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+mainInfo3:SetPoint("TOPLEFT", mainInfo2, "BOTTOMLEFT", 0, -12)
+mainInfo3:SetText("Select a subcategory on the left for specific settings.")
+mainInfo3:SetTextColor(0.5, 0.5, 0.5)
+
+-- --------------------------------------------------------------------
+-- Emotes Subcategory Panel
+-- --------------------------------------------------------------------
+local emotesPanel = CreateFrame("Frame")
+emotesPanel.name = "FuldFokus Emotes"
+emotesPanel.parent = "FuldFokus"
+
+local title = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 16, -16)
 title:SetText("FuldFokus Emotes")
 
-local sub = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+local sub = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 sub:SetText("Configure emote settings for FuldFokus Emotes.")
 
 -- Easter eggs
-local easter = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+local easter = CreateFrame("CheckButton", nil, emotesPanel, "InterfaceOptionsCheckButtonTemplate")
 easter:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -12)
 easter.Text:SetText("Enable Easter eggs")
 easter:SetScript("OnClick", function(self)
@@ -31,7 +61,7 @@ easter:SetScript("OnClick", function(self)
 end)
 
 -- Info text
-local infoLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local infoLabel = emotesPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 infoLabel:SetPoint("TOPLEFT", easter, "BOTTOMLEFT", 0, -24)
 infoLabel:SetText("Emotes are integrated into TwitchEmotes and accessible via the emote dropdown.")
 infoLabel:SetTextColor(0.7, 0.7, 0.7)
@@ -43,32 +73,40 @@ local function RefreshPanel()
   easter:SetChecked(FFE_DB.easter  ~= false)
 end
 
-panel.refresh = RefreshPanel
-panel:SetScript("OnShow", RefreshPanel)
+emotesPanel.refresh = RefreshPanel
+emotesPanel:SetScript("OnShow", RefreshPanel)
 
--- Register panel
-local category
+-- Register panels
+local mainCategory, emotesCategory
 if Settings and Settings.RegisterCanvasLayoutCategory then
-  category = Settings.RegisterCanvasLayoutCategory(panel, "FuldFokus")
-  Settings.RegisterAddOnCategory(category)
+  -- Register main category
+  mainCategory = Settings.RegisterCanvasLayoutCategory(mainPanel, mainPanel.name)
+  Settings.RegisterAddOnCategory(mainCategory)
+  
+  -- Register emotes as subcategory
+  emotesCategory = Settings.RegisterCanvasLayoutSubcategory(mainCategory, emotesPanel, emotesPanel.name)
 else
+  -- For older versions
   if InterfaceOptions_AddCategory then
-    InterfaceOptions_AddCategory(panel)
+    InterfaceOptions_AddCategory(mainPanel)
+    InterfaceOptions_AddCategory(emotesPanel)
   end
 end
 
-FFE._optionsPanel = panel
-FFE._settingsCategory = category or nil
+FFE._mainPanel = mainPanel
+FFE._emotesPanel = emotesPanel
+FFE._mainCategory = mainCategory or nil
+FFE._emotesCategory = emotesCategory or nil
 
 function FFE.OpenOptions()
-  if Settings and Settings.OpenToCategory and FFE._settingsCategory then
-    local id = FFE._settingsCategory.ID or FFE._settingsCategory
+  if Settings and Settings.OpenToCategory and FFE._mainCategory then
+    local id = FFE._mainCategory.ID or FFE._mainCategory
     Settings.OpenToCategory(id)
-  elseif InterfaceOptionsFrame_OpenToCategory and FFE._optionsPanel then
-    InterfaceOptionsFrame_OpenToCategory(FFE._optionsPanel)
-    InterfaceOptionsFrame_OpenToCategory(FFE._optionsPanel)
+  elseif InterfaceOptionsFrame_OpenToCategory and FFE._mainPanel then
+    InterfaceOptionsFrame_OpenToCategory(FFE._mainPanel)
+    InterfaceOptionsFrame_OpenToCategory(FFE._mainPanel)
   else
-    ok("Open via Game Menu → Options → AddOns → " .. (panel.name or "FuldFokus Emotes"))
+    ok("Open via Game Menu → Options → AddOns → FuldFokus")
   end
 end
 

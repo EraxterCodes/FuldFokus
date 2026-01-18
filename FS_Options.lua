@@ -57,16 +57,18 @@ panel:SetScript("OnShow", RefreshPanel)
 -- Register panel as a subcategory
 local category
 if Settings and Settings.RegisterCanvasLayoutCategory then
-  -- For TWW and beyond
+  -- For TWW and beyond - get the main category created by FFE_Options
   local mainCategory = Settings.GetCategory("FuldFokus")
-  if not mainCategory then
-    -- Create main category if it doesn't exist
-    local mainPanel = CreateFrame("Frame")
-    mainPanel.name = "FuldFokus"
-    mainCategory = Settings.RegisterCanvasLayoutCategory(mainPanel, mainPanel.name)
+  if mainCategory then
+    category = Settings.RegisterCanvasLayoutSubcategory(mainCategory, panel, panel.name)
+  else
+    -- Fallback: create our own if FFE_Options hasn't loaded yet
+    local tempMain = CreateFrame("Frame")
+    tempMain.name = "FuldFokus"
+    mainCategory = Settings.RegisterCanvasLayoutCategory(tempMain, tempMain.name)
     Settings.RegisterAddOnCategory(mainCategory)
+    category = Settings.RegisterCanvasLayoutSubcategory(mainCategory, panel, panel.name)
   end
-  category = Settings.RegisterCanvasLayoutSubcategory(mainCategory, panel, panel.name)
 else
   -- For older versions
   if InterfaceOptions_AddCategory then

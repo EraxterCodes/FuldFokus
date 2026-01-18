@@ -100,14 +100,10 @@ local function SlashCommandHandler(msg)
         end
     else
         -- Default: toggle UI
-        if FuldStonks and FuldStonks.frame then
-            if FuldStonks.frame:IsShown() then
-                FuldStonks.frame:Hide()
-            else
-                FuldStonks.frame:Show()
-            end
-        elseif _G.ToggleMainFrame then
-            _G.ToggleMainFrame()
+        if FuldStonks and FuldStonks.ToggleMainFrame then
+            FuldStonks.ToggleMainFrame()
+        else
+            print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " UI not loaded yet.")
         end
     end
 end

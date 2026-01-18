@@ -530,7 +530,7 @@ local function CreateMainFrame()
 end
 
 -- Toggle main frame visibility
-local function ToggleMainFrame()
+function FuldStonks.ToggleMainFrame()
     local frame = CreateMainFrame()
     if frame:IsShown() then
         frame:Hide()
