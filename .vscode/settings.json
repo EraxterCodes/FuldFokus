@@ -51,6 +51,9 @@
         "GameTooltip_AddErrorLine",
         "ItemRefTooltip",
         "SlashCmdList",
-        "Settings"
+        "Settings",
+        "StaticPopupDialogs",
+        "LE_PARTY_CATEGORY_INSTANCE",
+        "StaticPopup_Show"
     ]
 }
