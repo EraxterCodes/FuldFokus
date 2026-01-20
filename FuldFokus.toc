@@ -1,0 +1,18 @@
+## Interface: 120000
+## Title: |TInterface\AddOns\FuldFokus\Emotes\FuldFokus\FuldFokus:0|tFuldFokus|TInterface\AddOns\FuldFokus\Emotes\FuldFokus\FuldFokus:0|t
+## IconTexture: Interface\AddOns\FuldFokus\Emotes\FuldFokus.tga
+## Author: Eraxter
+## Notes: Combined addon: FuldFokus emotes for TwitchEmotes + FuldStonks guild betting system. Use /ffe for emotes, /fs for betting.
+## Version: 3.0
+## RequiredDeps: TwitchEmotes
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## X-Curse-Project-ID: 1329121
+## X-WAGO-ID: n6VPXEGd
+## SavedVariables: FFE_DB, FuldStonksDB
+
+FuldFokusEmotes.lua
+FFE_Commands.lua
+FuldStonks.lua
+FS_Commands.lua
+Options.lua

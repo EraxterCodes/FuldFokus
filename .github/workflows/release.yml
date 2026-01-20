@@ -12,22 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: v${{ github.run_number }}
-      ZIP: FuldFokusEmotes-v${{ github.run_number }}.zip
+      ZIP: FuldFokus-v${{ github.run_number }}.zip
     steps:
       - uses: actions/checkout@v4
 
       - name: Build zip
         run: |
-          mkdir -p dist/FuldFokusEmotes
-          cp -r Emotes dist/FuldFokusEmotes/
-          cp -r UI dist/FuldFokusEmotes/
-          cp FuldFokusEmotes.lua dist/FuldFokusEmotes/
-          cp FuldFokusEmotes.toc dist/FuldFokusEmotes/
-          cp FFE_Details.lua dist/FuldFokusEmotes/
-          cp FFE_Commands.lua dist/FuldFokusEmotes/
-          cp FFE_Options.lua dist/FuldFokusEmotes/
+          mkdir -p dist/FuldFokus
+          cp -r Emotes dist/FuldFokus/
+          cp -r UI dist/FuldFokus/
+          cp FuldFokus.lua dist/FuldFokus/
+          cp FuldFokus.toc dist/FuldFokus/
+          cp FFE_Details.lua dist/FuldFokus/
+          cp FFE_Commands.lua dist/FuldFokus/
+          cp FFE_Options.lua dist/FuldFokus/
           cd dist 
-          zip -r "$ZIP" FuldFokusEmotes
+          zip -r "$ZIP" FuldFokus
 
       - name: Create Git tag
         run: |
