@@ -21,11 +21,12 @@ jobs:
           mkdir -p dist/FuldFokus
           cp -r Emotes dist/FuldFokus/
           cp -r UI dist/FuldFokus/
-          cp FuldFokus.lua dist/FuldFokus/
           cp FuldFokus.toc dist/FuldFokus/
-          cp FFE_Details.lua dist/FuldFokus/
+          cp FuldFokusEmotes.lua dist/FuldFokus/
           cp FFE_Commands.lua dist/FuldFokus/
-          cp FFE_Options.lua dist/FuldFokus/
+          cp FuldStonks.lua dist/FuldFokus/
+          cp FS_Commands.lua dist/FuldFokus/
+          cp Options.lua dist/FuldFokus/
           cd dist 
           zip -r "$ZIP" FuldFokus
 
