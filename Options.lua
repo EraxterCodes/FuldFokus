@@ -95,10 +95,22 @@ local stonksSub = stonksPanel:CreateFontString(nil, "ARTWORK", "GameFontHighligh
 stonksSub:SetPoint("TOPLEFT", stonksTitle, "BOTTOMLEFT", 0, -8)
 stonksSub:SetText("Configure FuldStonks betting system.")
 
--- Debug mode checkbox
+-- Coming Soon notice (when feature is disabled)
+local comingSoonNotice = stonksPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+comingSoonNotice:SetPoint("TOPLEFT", stonksSub, "BOTTOMLEFT", 0, -20)
+comingSoonNotice:SetText("Coming Soon!")
+comingSoonNotice:SetTextColor(1, 0.82, 0)
+
+local comingSoonText = stonksPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+comingSoonText:SetPoint("TOPLEFT", comingSoonNotice, "BOTTOMLEFT", 0, -8)
+comingSoonText:SetWidth(500)
+comingSoonText:SetText("The FuldStonks guild betting system is currently under development.\nUse /fs to see the teaser message!")
+comingSoonText:SetTextColor(0.7, 0.7, 0.7)
+
+-- Debug mode checkbox (keep for testing)
 local debug = CreateFrame("CheckButton", nil, stonksPanel, "InterfaceOptionsCheckButtonTemplate")
-debug:SetPoint("TOPLEFT", stonksSub, "BOTTOMLEFT", 0, -12)
-debug.Text:SetText("Enable debug mode")
+debug:SetPoint("TOPLEFT", comingSoonText, "BOTTOMLEFT", 0, -16)
+debug.Text:SetText("Enable debug mode (for testing)")
 debug:SetScript("OnClick", function(self)
   if FuldStonksDB then
     FuldStonksDB.debug = self:GetChecked() and true or false
@@ -106,16 +118,12 @@ debug:SetScript("OnClick", function(self)
   end
 end)
 
--- Info text
-local stonksInfo = stonksPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-stonksInfo:SetPoint("TOPLEFT", debug, "BOTTOMLEFT", 0, -24)
-stonksInfo:SetText("Use /fs or /FuldStonks to open the betting UI.")
-stonksInfo:SetTextColor(0.7, 0.7, 0.7)
-
-local stonksInfo2 = stonksPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-stonksInfo2:SetPoint("TOPLEFT", stonksInfo, "BOTTOMLEFT", 0, -8)
-stonksInfo2:SetText("Type /fs help for a list of commands.")
-stonksInfo2:SetTextColor(0.7, 0.7, 0.7)
+-- Info text for developers
+local devInfo = stonksPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+devInfo:SetPoint("TOPLEFT", debug, "BOTTOMLEFT", 0, -16)
+devInfo:SetWidth(500)
+devInfo:SetText("Note: The feature can be enabled for testing by changing FULDSTONKS_ENABLED in FuldStonks.lua")
+devInfo:SetTextColor(0.5, 0.5, 0.5)
 
 -- Populate stonks panel from DB
 local function RefreshStonksPanel()

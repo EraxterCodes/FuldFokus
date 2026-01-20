@@ -3,6 +3,13 @@
 -- Author: EraxterCodes
 -- Part of the FuldFokus addon
 
+-- ============================================
+-- FEATURE FLAG: Toggle FuldStonks UI
+-- Set to false to disable UI and show "Coming Soon" message
+-- Set to true to enable full functionality for testing
+-- ============================================
+local FULDSTONKS_ENABLED = false
+
 -- Create addon namespace
 local ADDON_NAME = "FuldFokus"
 local FuldStonks = {}
@@ -529,8 +536,69 @@ local function CreateMainFrame()
     return frame
 end
 
+-- Show "Coming Soon" dialog when feature is disabled
+local function ShowComingSoonDialog()
+    -- Create the dialog if it doesn't exist
+    if not FuldStonks.comingSoonDialog then
+        local dialog = CreateFrame("Frame", "FuldStonksComingSoonDialog", UIParent, "BasicFrameTemplateWithInset")
+        dialog:SetSize(400, 200)
+        dialog:SetPoint("CENTER")
+        dialog:SetMovable(true)
+        dialog:EnableMouse(true)
+        dialog:RegisterForDrag("LeftButton")
+        dialog:SetScript("OnDragStart", dialog.StartMoving)
+        dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+        dialog:SetFrameStrata("DIALOG")
+        
+        -- Title
+        dialog.title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        dialog.title:SetPoint("TOP", 0, -8)
+        dialog.title:SetText("FuldStonks - Coming Soon!")
+        
+        -- Main message
+        dialog.message = dialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        dialog.message:SetPoint("TOP", 0, -50)
+        dialog.message:SetWidth(350)
+        dialog.message:SetJustifyH("CENTER")
+        dialog.message:SetText("The FuldStonks guild betting system is\ncurrently under development.")
+        
+        -- Teaser message
+        dialog.teaser = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        dialog.teaser:SetPoint("TOP", 0, -90)
+        dialog.teaser:SetWidth(350)
+        dialog.teaser:SetJustifyH("CENTER")
+        dialog.teaser:SetText("Create betting pools on raid outcomes,\nplace wagers with guild gold,\nand compete for the biggest wins!")
+        dialog.teaser:SetTextColor(0.7, 0.7, 0.7)
+        
+        -- Stay tuned message
+        dialog.footer = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        dialog.footer:SetPoint("BOTTOM", 0, 30)
+        dialog.footer:SetText("Stay tuned for the official release!")
+        dialog.footer:SetTextColor(1, 0.82, 0)
+        
+        -- Close button
+        local closeBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+        closeBtn:SetSize(100, 25)
+        closeBtn:SetPoint("BOTTOM", 0, 10)
+        closeBtn:SetText("Close")
+        closeBtn:SetScript("OnClick", function()
+            dialog:Hide()
+        end)
+        
+        FuldStonks.comingSoonDialog = dialog
+    end
+    
+    FuldStonks.comingSoonDialog:Show()
+end
+
 -- Toggle main frame visibility
 function FuldStonks.ToggleMainFrame()
+    -- Check if feature is enabled
+    if not FULDSTONKS_ENABLED then
+        ShowComingSoonDialog()
+        return
+    end
+    
     local frame = CreateMainFrame()
     if frame:IsShown() then
         frame:Hide()
