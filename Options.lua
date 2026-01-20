@@ -1,5 +1,5 @@
 -- Options.lua - Combined options panel for FuldFokus addon
--- Contains both FuldFokus Emotes and FuldStonks settings
+-- Contains both FuldFokus Emotes and FuldStonks settingsssss
 
 local ADDON_NAME = "FuldFokus"
 FFE = FFE or {}
