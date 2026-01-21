@@ -567,7 +567,7 @@ local function ShowComingSoonDialog()
         dialog.teaser:SetPoint("TOP", 0, -90)
         dialog.teaser:SetWidth(350)
         dialog.teaser:SetJustifyH("CENTER")
-        dialog.teaser:SetText("Create betting pools on raid outcomes,\nplace wagers with guild gold,\nand compete for the biggest wins!")
+        dialog.teaser:SetText("Skud ud til Oskar for at hjælpe med testing - Jeg giver end red bull til LAN!")
         dialog.teaser:SetTextColor(0.7, 0.7, 0.7)
         
         -- Stay tuned message
