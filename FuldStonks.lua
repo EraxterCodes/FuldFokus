@@ -1890,7 +1890,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             nonce = 0
         }
         local baseName = GetPlayerBaseName(sender)
-        print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " " .. baseName .. " connected!")
+        --print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " " .. baseName .. " connected!")
     end
     FuldStonks.peers[sender].lastSeen = now
     
