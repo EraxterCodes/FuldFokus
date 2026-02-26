@@ -1,4 +1,4 @@
-local EMOTES = {"FuldStonks","OliverArbjeder","OliverSlacker","fest","DokkeGASM","EmilHuh2","dembWauv","juliehitler","juliefødder","Auger","Roloff","Lawnmower","juliegao","EraxterSmile","Dokkeren","Dokke","madsp","airtox","MMMM","dembFårEndeligPIIstedetForNæbbene","xddWalk","HappiJam","crunch","catPunchU","tasty","EmilHuh","NOW","ALO","eww","Bruhcool","strog","CLANKER","WarlockMening","Eyeroll","Flirt","SayThatAgain","cap","dogsittingverycomfortable","catsittingverycomfortablebutmentallypreparingtogobackintothemines","peepoPogClimbingTreeHard4House","Looking","catsittingverycomfortablegaming","CatDespair","ta","maga","Ragebait","NairyOK","nøddebrunt","manWithProbingCane","Stroxx","darioClassic","ffsejr","wolt","emilFører","OnlyFans","sniffLoot","StroxxTlf","darioSmil","magexdd","mortenSur","eddyPeak","dembSmile","dembRizz","dembDespair","dembd","osmanBruh","levMette","wwwww","Scaredge","LockIn","magiBrain","GigaNæb","kvidder","wikked","MONKA","kaj","iAsk","GAMBAADDICT","fflol","ffActually","catsittingverycomfortable","pause","magiBoksen","EraxterSus","FuldDonk","EmilVinder","flyvebjørn","næb","naeb","fugl","doraGlad","doraW","skodbutik","rema","BobHehe","EmilOk","MortenW","magitlf","FuldFokus","EddySug","EmilMagi","MortenKniv","MortenSug" }
+local EMOTES = {"EddyLook","DarioDesigner","FuldStonks","OliverArbjeder","OliverSlacker","fest","DokkeGASM","EmilHuh2","dembWauv","juliehitler","juliefødder","Auger","Roloff","Lawnmower","juliegao","EraxterSmile","Dokkeren","Dokke","madsp","airtox","MMMM","dembFårEndeligPIIstedetForNæbbene","xddWalk","HappiJam","crunch","catPunchU","tasty","EmilHuh","NOW","ALO","eww","Bruhcool","strog","CLANKER","WarlockMening","Eyeroll","Flirt","SayThatAgain","cap","dogsittingverycomfortable","catsittingverycomfortablebutmentallypreparingtogobackintothemines","peepoPogClimbingTreeHard4House","Looking","catsittingverycomfortablegaming","CatDespair","ta","maga","Ragebait","NairyOK","nøddebrunt","manWithProbingCane","Stroxx","darioClassic","ffsejr","wolt","emilFører","OnlyFans","sniffLoot","StroxxTlf","darioSmil","magexdd","mortenSur","eddyPeak","dembSmile","dembRizz","dembDespair","dembd","osmanBruh","levMette","wwwww","Scaredge","LockIn","magiBrain","GigaNæb","kvidder","wikked","MONKA","kaj","iAsk","GAMBAADDICT","fflol","ffActually","catsittingverycomfortable","pause","magiBoksen","EraxterSus","FuldDonk","EmilVinder","flyvebjørn","næb","naeb","fugl","doraGlad","doraW","skodbutik","rema","BobHehe","EmilOk","MortenW","magitlf","FuldFokus","EddySug","EmilMagi","MortenKniv","MortenSug" }
 local BASE = "Interface\\AddOns\\FuldFokus\\Emotes\\FuldFokus\\"
 local SIZE = ":28:28"
 
@@ -129,6 +129,10 @@ local function integrate()
 end
 
 
+local issecretvalue = issecretvalue or function()
+    return false
+end
+
 local function escpattern(x)
     return (x:gsub("%%","%%%%")
              :gsub("%^","%%^")
@@ -146,6 +150,9 @@ end
 
 local function FF_Animator_UpdateEmoteInFontString(fontstring, widthOverride, heightOverride, fixedFrame)
     local txt = fontstring:GetText()
+    if issecretvalue(txt) == true then
+        return
+    end
     if not txt then return end
     for emoteTextureString in txt:gmatch("(|TInterface\\AddOns\\FuldFokus\\Emotes.-|t)") do
         local imagepath = emoteTextureString:match("|T(Interface\\AddOns\\FuldFokus\\Emotes.-%.tga).-|t")
