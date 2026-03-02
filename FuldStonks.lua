@@ -8,7 +8,7 @@
 -- Set to false to disable UI and show "Coming Soon" message
 -- Set to true to enable full functionality for testing
 -- ============================================
-local FULDSTONKS_ENABLED = false
+local FULDSTONKS_ENABLED = true
 
 -- Create addon namespace
 local ADDON_NAME = "FuldFokus"
@@ -21,6 +21,8 @@ FuldStonksDB = FuldStonksDB or {
     myBets = {},          -- Bets I've placed
     betHistory = {},      -- Historical bets
     ignoredBets = {},     -- Bets hidden from view
+    showHiddenBets = false, -- Show hidden bets in active list UI
+    devModeEnabled = false, -- Enable local UI test data generation
     stateVersion = 0,     -- Lamport clock for state versioning
     syncNonce = 0         -- Nonce to track sync sessions
 }
@@ -184,6 +186,39 @@ local function CreateMainFrame()
     frame.tabTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.tabTitle:SetPoint("TOPLEFT", frame.activeTab, "BOTTOMLEFT", 5, -12)
     frame.tabTitle:SetText("Active Bets:")
+
+    -- Show hidden toggle (active tab only)
+    frame.showHiddenCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    frame.showHiddenCheck:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -20, -64)
+    frame.showHiddenCheck:SetChecked(FuldStonksDB.showHiddenBets == true)
+    frame.showHiddenCheck:SetScript("OnClick", function(btn)
+        FuldStonksDB.showHiddenBets = btn:GetChecked() and true or false
+        frame:UpdateBetList()
+    end)
+
+    frame.showHiddenLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.showHiddenLabel:SetPoint("RIGHT", frame.showHiddenCheck, "LEFT", -2, 0)
+    frame.showHiddenLabel:SetText("Show hidden")
+    frame.showHiddenLabel:SetTextColor(0.85, 0.85, 0.85)
+
+    -- Dev mode toggle
+    frame.devModeCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    frame.devModeCheck:SetPoint("TOPRIGHT", frame.showHiddenCheck, "BOTTOMRIGHT", 0, -6)
+    frame.devModeCheck:SetChecked(FuldStonksDB.devModeEnabled == true)
+    frame.devModeCheck:SetScript("OnClick", function(btn)
+        FuldStonksDB.devModeEnabled = btn:GetChecked() and true or false
+        frame:UpdateBetList()
+        if FuldStonksDB.devModeEnabled then
+            print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Dev mode enabled.")
+        else
+            print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Dev mode disabled.")
+        end
+    end)
+
+    frame.devModeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.devModeLabel:SetPoint("RIGHT", frame.devModeCheck, "LEFT", -2, 0)
+    frame.devModeLabel:SetText("Dev mode")
+    frame.devModeLabel:SetTextColor(0.85, 0.85, 0.85)
     
     -- Scrollable bet list (adjusted to leave room for bottom button)
     frame.betList = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
@@ -203,6 +238,16 @@ local function CreateMainFrame()
     frame.createBetButton:SetScript("OnClick", function()
         FuldStonks:ShowBetCreationDialog()
     end)
+
+    -- Dev button (visible only when dev mode is enabled on active tab)
+    frame.devEntryButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.devEntryButton:SetSize(150, 28)
+    frame.devEntryButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 16)
+    frame.devEntryButton:SetText("Add Demo Entry")
+    frame.devEntryButton:SetScript("OnClick", function()
+        FuldStonks:AddDevRandomEntry()
+    end)
+    frame.devEntryButton:Hide()
     
     -- Function to update bet list display
     frame.UpdateBetList = function(self)
@@ -211,24 +256,50 @@ local function CreateMainFrame()
             child:Hide()
             child:SetParent(nil)
         end
+
+        -- Hide reusable "no bets" message (created on demand below)
+        if self.noBetsText then
+            self.noBetsText:Hide()
+        end
         
         -- Update tab title
         if self.currentTab == "active" then
             self.tabTitle:SetText("Active Bets:")
+            self.showHiddenCheck:Show()
+            self.showHiddenLabel:Show()
         else
             self.tabTitle:SetText("Bet History:")
+            self.showHiddenCheck:Hide()
+            self.showHiddenLabel:Hide()
+        end
+
+        if FuldStonksDB.devModeEnabled and self.currentTab == "active" then
+            self.devEntryButton:Show()
+        else
+            self.devEntryButton:Hide()
         end
         
         local yOffset = 0
         local betCount = 0
+        local activeTotalCount = 0
+        local activeHiddenCount = 0
+        local showHidden = (FuldStonksDB.showHiddenBets == true)
         
         -- Display bets based on current tab
         local betsToShow = {}
         if self.currentTab == "active" then
             -- Show active bets
             for betId, bet in pairs(FuldStonksDB.activeBets) do
-                if bet.status == "active" and not FuldStonksDB.ignoredBets[betId] then
-                    table.insert(betsToShow, {id = betId, bet = bet})
+                if bet.status == "active" then
+                    activeTotalCount = activeTotalCount + 1
+                    local isHidden = FuldStonksDB.ignoredBets[betId] == true
+                    if isHidden then
+                        activeHiddenCount = activeHiddenCount + 1
+                    end
+
+                    if showHidden or not isHidden then
+                        table.insert(betsToShow, {id = betId, bet = bet, isHidden = isHidden})
+                    end
                 end
             end
         else
@@ -236,14 +307,15 @@ local function CreateMainFrame()
             -- Only show bets the user participated in or created
             for betId, bet in pairs(FuldStonksDB.betHistory) do
                 local userParticipated = false
+                local myBaseName = GetPlayerBaseName(playerFullName)
                 
                 -- Check if user created the bet
-                if bet.createdBy == playerFullName then
+                if bet.createdBy == playerFullName or GetPlayerBaseName(bet.createdBy) == myBaseName then
                     userParticipated = true
                 else
                     -- Check if user was a participant
-                    for playerName, _ in pairs(bet.participants or {}) do
-                        if playerName == playerFullName then
+                    for participantName, _ in pairs(bet.participants or {}) do
+                        if participantName == playerFullName or GetPlayerBaseName(participantName) == myBaseName then
                             userParticipated = true
                             break
                         end
@@ -267,10 +339,12 @@ local function CreateMainFrame()
         for _, betData in ipairs(betsToShow) do
             local betId = betData.id
             local bet = betData.bet
+            local isHidden = betData.isHidden == true
             local isHistory = (self.currentTab == "history")
             
             local betFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
-            betFrame:SetSize(520, 80)
+            local betFrameHeight = isHistory and 90 or 110
+            betFrame:SetSize(520, betFrameHeight)
             betFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 0, -yOffset)
             betFrame:SetBackdrop({
                 bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -337,7 +411,8 @@ local function CreateMainFrame()
             title:SetPoint("TOPLEFT", betFrame, "TOPLEFT", 10, -8)
             title:SetText(bet.title)
             title:SetJustifyH("LEFT")
-            title:SetWidth(450)
+            title:SetWidth(isHistory and 410 or 500)
+            title:SetWordWrap(false)
             
             -- Status indicator for history
             if isHistory then
@@ -379,11 +454,15 @@ local function CreateMainFrame()
             else
                 -- Hide button on the right for active bets
                 local hideButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
-                hideButton:SetSize(50, 20)
-                hideButton:SetPoint("TOPRIGHT", betFrame, "TOPRIGHT", -8, -8)
-                hideButton:SetText("Hide")
+                hideButton:SetSize(62, 20)
+                hideButton:SetPoint("BOTTOMRIGHT", betFrame, "BOTTOMRIGHT", -8, 8)
+                hideButton:SetText(isHidden and "Unhide" or "Hide")
                 hideButton:SetScript("OnClick", function()
-                    FuldStonks:HideBet(betId)
+                    if isHidden then
+                        FuldStonks:UnhideBet(betId)
+                    else
+                        FuldStonks:HideBet(betId)
+                    end
                     self:UpdateBetList()
                 end)
             end
@@ -392,6 +471,8 @@ local function CreateMainFrame()
             local creatorName = GetPlayerBaseName(bet.createdBy)
             local info = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             info:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+            info:SetWidth(500)
+            info:SetWordWrap(false)
             
             if isHistory then
                 -- Show final pot and winning option for history
@@ -414,6 +495,8 @@ local function CreateMainFrame()
                     -- Show pending status
                     local pendingText = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                     pendingText:SetPoint("TOPLEFT", info, "BOTTOMLEFT", 0, -3)
+                    pendingText:SetWidth(500)
+                    pendingText:SetWordWrap(false)
                     local pendingBet = FuldStonks.pendingBets[playerFullName]
                     pendingText:SetText(COLOR_ORANGE .. "⏳ PENDING: " .. pendingBet.option .. " (" .. pendingBet.amount .. "g) - Awaiting trade" .. COLOR_RESET)
                     pendingText:SetTextColor(1, 0.5, 0)
@@ -463,27 +546,35 @@ local function CreateMainFrame()
                 -- History: Only show Inspect button (greyed out style)
                 local inspectButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
                 inspectButton:SetSize(80, 22)
-                inspectButton:SetPoint("TOPLEFT", info, "BOTTOMLEFT", 0, -5)
+                inspectButton:SetPoint("BOTTOMLEFT", betFrame, "BOTTOMLEFT", 10, 8)
                 inspectButton:SetText("Inspect")
                 inspectButton:SetScript("OnClick", function()
                     FuldStonks:ShowBetInspectDialog(betId)
                 end)
             end
             
-            yOffset = yOffset + 85
+            yOffset = yOffset + betFrameHeight + 8
             betCount = betCount + 1
         end
         
         -- Show message if no bets
         if betCount == 0 then
-            local noBetsText = self.betListContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            noBetsText:SetPoint("TOP", self.betListContent, "TOP", 0, -20)
-            if self.currentTab == "active" then
-                noBetsText:SetText("No active bets.\nUse " .. COLOR_YELLOW .. "/fs create" .. COLOR_RESET .. " to create one!")
-            else
-                noBetsText:SetText("No bet history yet.\nResolved and cancelled bets will appear here.")
+            if not self.noBetsText then
+                self.noBetsText = self.betListContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                self.noBetsText:SetPoint("TOP", self.betListContent, "TOP", 0, -20)
+                self.noBetsText:SetJustifyH("CENTER")
             end
-            noBetsText:SetJustifyH("CENTER")
+
+            if self.currentTab == "active" then
+                if activeTotalCount > 0 and activeHiddenCount == activeTotalCount and not showHidden then
+                    self.noBetsText:SetText("All active bets are hidden.\nEnable " .. COLOR_YELLOW .. "Show hidden" .. COLOR_RESET .. " or use " .. COLOR_YELLOW .. "/fs unhideall" .. COLOR_RESET .. ".")
+                else
+                    self.noBetsText:SetText("No active bets.\nUse " .. COLOR_YELLOW .. "/fs create" .. COLOR_RESET .. " to create one!")
+                end
+            else
+                self.noBetsText:SetText("No bet history yet.\nResolved and cancelled bets will appear here.")
+            end
+            self.noBetsText:Show()
         end
         
         self.betListContent:SetHeight(math.max(yOffset, 300))
@@ -1146,7 +1237,7 @@ function FuldStonks:ShowBetInspectDialog(betId)
     -- Create dialog if it doesn't exist
     if not self.inspectDialog then
         local dialog = CreateFrame("Frame", "FuldStonksInspectDialog", UIParent, "BasicFrameTemplateWithInset")
-        dialog:SetSize(600, 500)
+        dialog:SetSize(700, 560)
         dialog:SetPoint("CENTER")
         dialog:SetMovable(true)
         dialog:EnableMouse(true)
@@ -1162,20 +1253,71 @@ function FuldStonks:ShowBetInspectDialog(betId)
         
         dialog.betTitle = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         dialog.betTitle:SetPoint("TOP", dialog, "TOP", 0, -35)
-        dialog.betTitle:SetWidth(560)
+        dialog.betTitle:SetWidth(660)
         dialog.betTitle:SetJustifyH("CENTER")
         
         -- Info section
         dialog.infoText = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         dialog.infoText:SetPoint("TOP", dialog.betTitle, "BOTTOM", 0, -10)
-        dialog.infoText:SetWidth(560)
+        dialog.infoText:SetWidth(660)
         dialog.infoText:SetJustifyH("CENTER")
+
+        -- Money flow graph (confirmed + pending)
+        dialog.graphFrame = CreateFrame("Frame", nil, dialog, "InsetFrameTemplate")
+        dialog.graphFrame:SetPoint("TOPLEFT", dialog.infoText, "BOTTOMLEFT", 10, -10)
+        dialog.graphFrame:SetPoint("TOPRIGHT", dialog.infoText, "BOTTOMRIGHT", -10, -10)
+        dialog.graphFrame:SetHeight(120)
+
+        dialog.graphTitle = dialog.graphFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        dialog.graphTitle:SetPoint("TOP", dialog.graphFrame, "TOP", 0, -8)
+        dialog.graphTitle:SetText("MONEY FLOW")
+
+        dialog.graphSummary = dialog.graphFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        dialog.graphSummary:SetPoint("BOTTOM", dialog.graphFrame, "BOTTOM", 0, 8)
+        dialog.graphSummary:SetTextColor(0.75, 0.75, 0.75)
+
+        dialog.graphRows = {}
+        dialog.GetGraphRow = function(self, index)
+            if self.graphRows[index] then
+                return self.graphRows[index]
+            end
+
+            local row = CreateFrame("Frame", nil, self.graphFrame)
+            row:SetSize(620, 18)
+            row:SetPoint("TOPLEFT", self.graphFrame, "TOPLEFT", 10, -28 - ((index - 1) * 20))
+
+            row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
+            row.label:SetWidth(90)
+            row.label:SetJustifyH("LEFT")
+
+            row.barContainer = CreateFrame("Frame", nil, row)
+            row.barContainer:SetPoint("LEFT", row.label, "RIGHT", 8, 0)
+            row.barContainer:SetSize(320, 12)
+
+            row.barBg = row.barContainer:CreateTexture(nil, "BACKGROUND")
+            row.barBg:SetAllPoints(row.barContainer)
+            row.barBg:SetColorTexture(0.18, 0.18, 0.18, 0.9)
+
+            row.barFill = row.barContainer:CreateTexture(nil, "ARTWORK")
+            row.barFill:SetPoint("LEFT", row.barContainer, "LEFT", 0, 0)
+            row.barFill:SetHeight(12)
+            row.barFill:SetColorTexture(0.4, 0.4, 0.4, 0.95)
+
+            row.value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            row.value:SetPoint("LEFT", row.barContainer, "RIGHT", 8, 0)
+            row.value:SetWidth(190)
+            row.value:SetJustifyH("LEFT")
+
+            self.graphRows[index] = row
+            return row
+        end
         
-        -- Top row: 2 columns (Yes and No)
-        -- Left column (Yes - Green)
+        -- Two columns (Yes and No) with larger readable area
         dialog.yesFrame = CreateFrame("Frame", nil, dialog, "InsetFrameTemplate")
-        dialog.yesFrame:SetPoint("TOPLEFT", dialog.infoText, "BOTTOMLEFT", 10, -10)
-        dialog.yesFrame:SetSize(270, 180)
+        dialog.yesFrame:SetPoint("TOPLEFT", dialog.graphFrame, "BOTTOMLEFT", 0, -10)
+        dialog.yesFrame:SetPoint("BOTTOMLEFT", dialog, "BOTTOMLEFT", 20, 50)
+        dialog.yesFrame:SetWidth(320)
         
         dialog.yesTitle = dialog.yesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         dialog.yesTitle:SetPoint("TOP", dialog.yesFrame, "TOP", 0, -8)
@@ -1183,7 +1325,7 @@ function FuldStonks:ShowBetInspectDialog(betId)
         
         dialog.yesScroll = CreateFrame("ScrollFrame", nil, dialog.yesFrame, "UIPanelScrollFrameTemplate")
         dialog.yesScroll:SetPoint("TOPLEFT", dialog.yesFrame, "TOPLEFT", 8, -30)
-        dialog.yesScroll:SetPoint("BOTTOMRIGHT", dialog.yesFrame, "BOTTOMRIGHT", -28, 8)
+        dialog.yesScroll:SetPoint("BOTTOMRIGHT", dialog.yesFrame, "BOTTOMRIGHT", -28, 32)
         
         dialog.yesContent = CreateFrame("Frame", nil, dialog.yesScroll)
         dialog.yesContent:SetSize(230, 1)
@@ -1194,10 +1336,10 @@ function FuldStonks:ShowBetInspectDialog(betId)
         dialog.yesText:SetWidth(230)
         dialog.yesText:SetJustifyH("LEFT")
         
-        -- Right column (No - Red)
         dialog.noFrame = CreateFrame("Frame", nil, dialog, "InsetFrameTemplate")
-        dialog.noFrame:SetPoint("TOPRIGHT", dialog.infoText, "BOTTOMRIGHT", -10, -10)
-        dialog.noFrame:SetSize(270, 180)
+        dialog.noFrame:SetPoint("TOPRIGHT", dialog.graphFrame, "BOTTOMRIGHT", 0, -10)
+        dialog.noFrame:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -20, 50)
+        dialog.noFrame:SetWidth(320)
         
         dialog.noTitle = dialog.noFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         dialog.noTitle:SetPoint("TOP", dialog.noFrame, "TOP", 0, -8)
@@ -1205,7 +1347,7 @@ function FuldStonks:ShowBetInspectDialog(betId)
         
         dialog.noScroll = CreateFrame("ScrollFrame", nil, dialog.noFrame, "UIPanelScrollFrameTemplate")
         dialog.noScroll:SetPoint("TOPLEFT", dialog.noFrame, "TOPLEFT", 8, -30)
-        dialog.noScroll:SetPoint("BOTTOMRIGHT", dialog.noFrame, "BOTTOMRIGHT", -28, 8)
+        dialog.noScroll:SetPoint("BOTTOMRIGHT", dialog.noFrame, "BOTTOMRIGHT", -28, 32)
         
         dialog.noContent = CreateFrame("Frame", nil, dialog.noScroll)
         dialog.noContent:SetSize(230, 1)
@@ -1215,29 +1357,6 @@ function FuldStonks:ShowBetInspectDialog(betId)
         dialog.noText:SetPoint("TOPLEFT", dialog.noContent, "TOPLEFT", 0, 0)
         dialog.noText:SetWidth(230)
         dialog.noText:SetJustifyH("LEFT")
-        
-        -- Bottom row: Full width (Pending Bets)
-        dialog.pendingFrame = CreateFrame("Frame", nil, dialog, "InsetFrameTemplate")
-        dialog.pendingFrame:SetPoint("TOPLEFT", dialog.yesFrame, "BOTTOMLEFT", 0, -10)
-        dialog.pendingFrame:SetPoint("TOPRIGHT", dialog.noFrame, "BOTTOMRIGHT", 0, -10)
-        dialog.pendingFrame:SetHeight(80)
-        
-        dialog.pendingTitle = dialog.pendingFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        dialog.pendingTitle:SetPoint("TOP", dialog.pendingFrame, "TOP", 0, -8)
-        dialog.pendingTitle:SetText(COLOR_ORANGE .. "PENDING BETS" .. COLOR_RESET)
-        
-        dialog.pendingScroll = CreateFrame("ScrollFrame", nil, dialog.pendingFrame, "UIPanelScrollFrameTemplate")
-        dialog.pendingScroll:SetPoint("TOPLEFT", dialog.pendingFrame, "TOPLEFT", 8, -30)
-        dialog.pendingScroll:SetPoint("BOTTOMRIGHT", dialog.pendingFrame, "BOTTOMRIGHT", -28, 8)
-        
-        dialog.pendingContent = CreateFrame("Frame", nil, dialog.pendingScroll)
-        dialog.pendingContent:SetSize(540, 1)
-        dialog.pendingScroll:SetScrollChild(dialog.pendingContent)
-        
-        dialog.pendingText = dialog.pendingContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        dialog.pendingText:SetPoint("TOPLEFT", dialog.pendingContent, "TOPLEFT", 0, 0)
-        dialog.pendingText:SetWidth(540)
-        dialog.pendingText:SetJustifyH("LEFT")
         
         -- Resolution buttons (shown only if bet creator)
         dialog.yesWinsButton = CreateFrame("Button", nil, dialog.yesFrame, "UIPanelButtonTemplate")
@@ -1265,18 +1384,73 @@ function FuldStonks:ShowBetInspectDialog(betId)
         -- Cancel bet button (shown only if bet creator)
         dialog.cancelBetButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
         dialog.cancelBetButton:SetSize(100, 25)
-        dialog.cancelBetButton:SetPoint("BOTTOM", dialog, "BOTTOM", -55, 15)
+        dialog.cancelBetButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -122, 12)
         dialog.cancelBetButton:SetText("Cancel Bet")
         dialog.cancelBetButton:SetScript("OnClick", function()
             if dialog.currentBetId then
                 StaticPopup_Show("FULDSTONKS_CONFIRM_CANCEL", nil, nil, dialog.currentBetId)
             end
         end)
+
+        -- Attached side window for owner moderation tools (left side)
+        local ownerDialog = CreateFrame("Frame", "FuldStonksInspectOwnerDialog", UIParent, "BasicFrameTemplateWithInset")
+        ownerDialog:SetSize(340, 220)
+        ownerDialog:SetPoint("TOPRIGHT", dialog, "TOPLEFT", -8, 0)
+        ownerDialog:SetFrameStrata("DIALOG")
+        ownerDialog:Hide()
+
+        ownerDialog.title = ownerDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        ownerDialog.title:SetPoint("TOP", ownerDialog.TitleBg, "TOP", 0, -3)
+        ownerDialog.title:SetText("Owner Tools")
+
+        dialog.modLabel = ownerDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        dialog.modLabel:SetPoint("TOPLEFT", ownerDialog, "TOPLEFT", 16, -40)
+        dialog.modLabel:SetText("Player name:")
+        dialog.modLabel:SetTextColor(0.85, 0.85, 0.85)
+
+        dialog.modTargetInput = CreateFrame("EditBox", nil, ownerDialog, "InputBoxTemplate")
+        dialog.modTargetInput:SetSize(190, 20)
+        dialog.modTargetInput:SetPoint("TOPLEFT", dialog.modLabel, "BOTTOMLEFT", 0, -8)
+        dialog.modTargetInput:SetAutoFocus(false)
+        dialog.modTargetInput:SetMaxLetters(32)
+
+        dialog.removeBetButton = CreateFrame("Button", nil, ownerDialog, "UIPanelButtonTemplate")
+        dialog.removeBetButton:SetSize(140, 24)
+        dialog.removeBetButton:SetPoint("TOPLEFT", dialog.modTargetInput, "BOTTOMLEFT", 0, -14)
+        dialog.removeBetButton:SetText("Remove Confirmed Bet")
+        dialog.removeBetButton:SetScript("OnClick", function()
+            if dialog.currentBetId then
+                FuldStonks:CancelUserBet(dialog.currentBetId, dialog.modTargetInput:GetText(), false)
+                dialog.modTargetInput:SetText("")
+            end
+        end)
+
+        dialog.removePendingButton = CreateFrame("Button", nil, ownerDialog, "UIPanelButtonTemplate")
+        dialog.removePendingButton:SetSize(140, 24)
+        dialog.removePendingButton:SetPoint("TOPLEFT", dialog.removeBetButton, "BOTTOMLEFT", 0, -8)
+        dialog.removePendingButton:SetText("Remove Pending Bet")
+        dialog.removePendingButton:SetScript("OnClick", function()
+            if dialog.currentBetId then
+                FuldStonks:CancelUserBet(dialog.currentBetId, dialog.modTargetInput:GetText(), true)
+                dialog.modTargetInput:SetText("")
+            end
+        end)
+
+        ownerDialog.helpText = ownerDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        ownerDialog.helpText:SetPoint("BOTTOMLEFT", ownerDialog, "BOTTOMLEFT", 16, 16)
+        ownerDialog.helpText:SetWidth(300)
+        ownerDialog.helpText:SetJustifyH("LEFT")
+        ownerDialog.helpText:SetTextColor(0.75, 0.75, 0.75)
+        ownerDialog.helpText:SetText("Use name or name-realm.")
+
+        ownerDialog.CloseButton:SetScript("OnClick", function()
+            ownerDialog:Hide()
+        end)
         
         -- Close button
         dialog.closeButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
         dialog.closeButton:SetSize(100, 25)
-        dialog.closeButton:SetPoint("BOTTOM", dialog, "BOTTOM", 55, 15)
+        dialog.closeButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -12, 12)
         dialog.closeButton:SetText("Close")
         dialog.closeButton:SetScript("OnClick", function()
             dialog:Hide()
@@ -1285,6 +1459,60 @@ function FuldStonks:ShowBetInspectDialog(betId)
         dialog.CloseButton:SetScript("OnClick", function()
             dialog:Hide()
         end)
+
+        -- Attached side window for pending bets
+        local pendingDialog = CreateFrame("Frame", "FuldStonksInspectPendingDialog", UIParent, "BasicFrameTemplateWithInset")
+        pendingDialog:SetSize(340, 560)
+        pendingDialog:SetPoint("TOPLEFT", dialog, "TOPRIGHT", 8, 0)
+        pendingDialog:SetFrameStrata("DIALOG")
+        pendingDialog:Hide()
+
+        pendingDialog.title = pendingDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        pendingDialog.title:SetPoint("TOP", pendingDialog.TitleBg, "TOP", 0, -3)
+        pendingDialog.title:SetText("Pending Bets")
+
+        pendingDialog.summary = pendingDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        pendingDialog.summary:SetPoint("TOP", pendingDialog, "TOP", 0, -35)
+        pendingDialog.summary:SetWidth(300)
+        pendingDialog.summary:SetJustifyH("CENTER")
+        pendingDialog.summary:SetTextColor(0.8, 0.8, 0.8)
+
+        pendingDialog.scroll = CreateFrame("ScrollFrame", nil, pendingDialog, "UIPanelScrollFrameTemplate")
+        pendingDialog.scroll:SetPoint("TOPLEFT", pendingDialog, "TOPLEFT", 12, -60)
+        pendingDialog.scroll:SetPoint("BOTTOMRIGHT", pendingDialog, "BOTTOMRIGHT", -30, 40)
+
+        pendingDialog.content = CreateFrame("Frame", nil, pendingDialog.scroll)
+        pendingDialog.content:SetSize(280, 1)
+        pendingDialog.scroll:SetScrollChild(pendingDialog.content)
+
+        pendingDialog.text = pendingDialog.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        pendingDialog.text:SetPoint("TOPLEFT", pendingDialog.content, "TOPLEFT", 0, 0)
+        pendingDialog.text:SetWidth(280)
+        pendingDialog.text:SetJustifyH("LEFT")
+
+        pendingDialog.closeButton = CreateFrame("Button", nil, pendingDialog, "UIPanelButtonTemplate")
+        pendingDialog.closeButton:SetSize(100, 24)
+        pendingDialog.closeButton:SetPoint("BOTTOM", pendingDialog, "BOTTOM", 0, 12)
+        pendingDialog.closeButton:SetText("Close")
+        pendingDialog.closeButton:SetScript("OnClick", function()
+            pendingDialog:Hide()
+        end)
+
+        pendingDialog.CloseButton:SetScript("OnClick", function()
+            pendingDialog:Hide()
+        end)
+
+        dialog:SetScript("OnHide", function()
+            if FuldStonks.inspectPendingDialog then
+                FuldStonks.inspectPendingDialog:Hide()
+            end
+            if FuldStonks.inspectOwnerDialog then
+                FuldStonks.inspectOwnerDialog:Hide()
+            end
+        end)
+
+        self.inspectOwnerDialog = ownerDialog
+        self.inspectPendingDialog = pendingDialog
         
         self.inspectDialog = dialog
     end
@@ -1301,6 +1529,13 @@ function FuldStonks:ShowBetInspectDialog(betId)
     self.inspectDialog.yesWinsButton:SetShown(isCreator)
     self.inspectDialog.noWinsButton:SetShown(isCreator)
     self.inspectDialog.cancelBetButton:SetShown(isCreator)
+    self.inspectDialog.modLabel:SetShown(isCreator)
+    self.inspectDialog.modTargetInput:SetShown(isCreator)
+    self.inspectDialog.removeBetButton:SetShown(isCreator)
+    self.inspectDialog.removePendingButton:SetShown(isCreator)
+    if self.inspectOwnerDialog then
+        self.inspectOwnerDialog:SetShown(isCreator)
+    end
     
     -- Group participants by option
     local optionGroups = {}
@@ -1315,6 +1550,88 @@ function FuldStonks:ShowBetInspectDialog(betId)
     for option, group in pairs(optionGroups) do
         table.sort(group, function(a, b) return a.amount > b.amount end)
     end
+
+    -- Build graph data (money + bet counts + pending)
+    local optionTotals = {}
+    local optionCounts = {}
+    for _, option in ipairs(bet.options or {}) do
+        optionTotals[option] = 0
+        optionCounts[option] = 0
+    end
+
+    for _, participation in pairs(bet.participants or {}) do
+        local opt = participation.option or "Other"
+        optionTotals[opt] = (optionTotals[opt] or 0) + (participation.amount or 0)
+        optionCounts[opt] = (optionCounts[opt] or 0) + 1
+    end
+
+    local pendingTotal = 0
+    local pendingCount = 0
+    for _, pendingBet in pairs(self.pendingBets) do
+        if pendingBet.betId == betId then
+            pendingTotal = pendingTotal + (pendingBet.amount or 0)
+            pendingCount = pendingCount + 1
+        end
+    end
+
+    local graphRowsData = {}
+    for _, option in ipairs(bet.options or {}) do
+        local color = {0.8, 0.8, 0.3}
+        if option == "Yes" then
+            color = {0.2, 0.85, 0.2}
+        elseif option == "No" then
+            color = {0.9, 0.2, 0.2}
+        end
+
+        table.insert(graphRowsData, {
+            label = option,
+            amount = optionTotals[option] or 0,
+            count = optionCounts[option] or 0,
+            color = color
+        })
+    end
+
+    table.insert(graphRowsData, {
+        label = "Pending",
+        amount = pendingTotal,
+        count = pendingCount,
+        color = {1.0, 0.55, 0.15}
+    })
+
+    local totalFlow = (bet.totalPot or 0) + pendingTotal
+    local flowBase = math.max(totalFlow, 1)
+
+    for i, rowData in ipairs(graphRowsData) do
+        local row = self.inspectDialog:GetGraphRow(i)
+        local amount = rowData.amount or 0
+        local count = rowData.count or 0
+        local pct = 0
+        if totalFlow > 0 then
+            pct = math.floor((amount / totalFlow) * 100 + 0.5)
+        end
+
+        row.label:SetText(rowData.label)
+        row.value:SetText(amount .. "g • " .. count .. " bets (" .. pct .. "%)")
+
+        local fillWidth = 0
+        if amount > 0 then
+            fillWidth = math.floor((amount / flowBase) * row.barContainer:GetWidth())
+            if fillWidth < 2 then
+                fillWidth = 2
+            end
+        end
+        row.barFill:SetWidth(fillWidth)
+        row.barFill:SetColorTexture(rowData.color[1], rowData.color[2], rowData.color[3], 0.95)
+        row:Show()
+    end
+
+    for i = #graphRowsData + 1, #self.inspectDialog.graphRows do
+        self.inspectDialog.graphRows[i]:Hide()
+    end
+
+    self.inspectDialog.graphSummary:SetText(
+        "Confirmed: " .. (bet.totalPot or 0) .. "g • Pending: " .. pendingTotal .. "g • Total Flow: " .. totalFlow .. "g"
+    )
     
     -- Build Yes section
     local yesGroup = optionGroups["Yes"] or {}
@@ -1380,7 +1697,7 @@ function FuldStonks:ShowBetInspectDialog(betId)
     local noHeight = self.inspectDialog.noText:GetStringHeight()
     self.inspectDialog.noContent:SetHeight(math.max(noHeight + 20, 100))
     
-    -- Build pending bets section
+    -- Build pending bets section (in attached side window)
     local pendingInfo = ""
     local hasPendingBets = false
     
@@ -1400,11 +1717,17 @@ function FuldStonks:ShowBetInspectDialog(betId)
             pendingInfo = COLOR_GRAY .. "No pending bets" .. COLOR_RESET
         end
     end
-    
-    self.inspectDialog.pendingText:SetText(pendingInfo)
-    local pendingHeight = self.inspectDialog.pendingText:GetStringHeight()
-    self.inspectDialog.pendingContent:SetHeight(math.max(pendingHeight + 20, 80))
-    
+
+    if self.inspectPendingDialog then
+        self.inspectPendingDialog.summary:SetText(
+            COLOR_ORANGE .. pendingCount .. COLOR_RESET .. " pending entries • " .. COLOR_ORANGE .. pendingTotal .. "g" .. COLOR_RESET
+        )
+        self.inspectPendingDialog.text:SetText(pendingInfo)
+        local pendingHeight = self.inspectPendingDialog.text:GetStringHeight()
+        self.inspectPendingDialog.content:SetHeight(math.max(pendingHeight + 20, 420))
+        self.inspectPendingDialog:Show()
+    end
+
     self.inspectDialog:Show()
 end
 
@@ -1499,6 +1822,8 @@ local MSG_STATE_SYNC = "STATESYNC"  -- Full state broadcast (sent every 5s)
 local MSG_SYNC_REQUEST = "SYNCREQ"  -- Request full state sync on demand
 local MSG_BET_PENDING = "BETPND"    -- Pending bet notification (sent to bet creator immediately)
 local MSG_BET_PENDING_CANCEL = "BETPNDCNL"  -- Pending bet cancellation (sent to bet creator immediately)
+local MSG_BET_PENDING_REJECT = "BETPNDRJ"  -- Pending bet rejected by bet creator
+local MSG_BET_CONFIRMED = "BETCNF"  -- Confirmed bet update for immediate UI refresh
 
 -- Determine the best channel to send messages
 local function GetBroadcastChannel()
@@ -1613,6 +1938,24 @@ local function DeserializeParticipant(participantString)
     }
 end
 
+-- Refresh inspect dialogs if currently open
+local function RefreshOpenInspectDialog()
+    if not FuldStonks.inspectDialog or not FuldStonks.inspectDialog:IsShown() then
+        return
+    end
+
+    local currentBetId = FuldStonks.inspectDialog.currentBetId
+    if not currentBetId then
+        return
+    end
+
+    if FuldStonksDB.activeBets[currentBetId] or FuldStonksDB.betHistory[currentBetId] then
+        FuldStonks:ShowBetInspectDialog(currentBetId)
+    else
+        FuldStonks.inspectDialog:Hide()
+    end
+end
+
 -- Create a snapshot of current addon state
 function FuldStonks:CreateStateSnapshot()
     local snapshot = {
@@ -1627,7 +1970,7 @@ function FuldStonks:CreateStateSnapshot()
     
     -- Collect all active bets
     for betId, bet in pairs(FuldStonksDB.activeBets) do
-        if bet.status == "active" then
+        if bet.status == "active" and not bet.isDevMock then
             table.insert(snapshot.bets, {
                 id = betId,
                 data = SerializeBetForSync(bet)
@@ -1649,34 +1992,51 @@ end
 -- Broadcast full state sync
 function FuldStonks:BroadcastStateSync()
     local snapshot = self:CreateStateSnapshot()
-    
-    -- Send bet data in chunks (WoW has 255 char limit per message)
-    -- Format: STATESYNC|HEADER|version|nonce|betCount|participantCount
-    local header = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_HEADER, snapshot.version, snapshot.nonce, #snapshot.bets, #snapshot.participants)
-    
+
+    -- Build a sendable payload first so header counts match what is actually sent.
+    -- Otherwise receivers can wait forever for chunks that were skipped.
+    local sendableBets = {}
+    local sendableBetIds = {}
+    for _, betData in ipairs(snapshot.bets) do
+        local preview = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_BET, snapshot.nonce, 1, betData.id, betData.data)
+        if #preview <= 255 then
+            table.insert(sendableBets, betData)
+            sendableBetIds[betData.id] = true
+        else
+            DebugPrint("Bet message too long (" .. #preview .. " chars), skipping: " .. betData.id)
+        end
+    end
+
+    local sendableParticipants = {}
+    for _, participantData in ipairs(snapshot.participants) do
+        if sendableBetIds[participantData.betId] then
+            local preview = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_PARTICIPANT, snapshot.nonce, 1, participantData.betId, participantData.data)
+            if #preview <= 255 then
+                table.insert(sendableParticipants, participantData)
+            else
+                DebugPrint("Participant message too long, skipping betId: " .. participantData.betId)
+            end
+        end
+    end
+
+    -- Send header with the exact chunk counts we will send.
+    local header = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_HEADER, snapshot.version, snapshot.nonce, #sendableBets, #sendableParticipants)
+    local channel = GetBroadcastChannel()
     if #header <= 255 then
-        C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, header, GetBroadcastChannel())
-        DebugPrint("Sent state sync header: v" .. snapshot.version .. " nonce:" .. snapshot.nonce .. " bets:" .. #snapshot.bets .. " participants:" .. #snapshot.participants)
+        C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, header, channel)
+        DebugPrint("Sent state sync header: v" .. snapshot.version .. " nonce:" .. snapshot.nonce .. " bets:" .. #sendableBets .. " participants:" .. #sendableParticipants)
     end
-    
+
     -- Send each bet
-    for i, betData in ipairs(snapshot.bets) do
+    for i, betData in ipairs(sendableBets) do
         local betMsg = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_BET, snapshot.nonce, i, betData.id, betData.data)
-        if #betMsg <= 255 then
-            C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, betMsg, GetBroadcastChannel())
-        else
-            DebugPrint("Bet message too long (" .. #betMsg .. " chars), skipping: " .. betData.id)
-        end
+        C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, betMsg, channel)
     end
-    
+
     -- Send participant data
-    for i, participantData in ipairs(snapshot.participants) do
+    for i, participantData in ipairs(sendableParticipants) do
         local partMsg = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_PARTICIPANT, snapshot.nonce, i, participantData.betId, participantData.data)
-        if #partMsg <= 255 then
-            C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, partMsg, GetBroadcastChannel())
-        else
-            DebugPrint("Participant message too long, skipping")
-        end
+        C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, partMsg, channel)
     end
     
     self.lastBroadcast = GetTime()
@@ -1823,6 +2183,17 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
             end
         end
     end
+
+    -- If our own pending bet is now confirmed via sync, clear local pending state.
+    local myPending = self.pendingBets[playerFullName]
+    if myPending then
+        local pendingBet = FuldStonksDB.activeBets[myPending.betId]
+        if pendingBet and pendingBet.participants and pendingBet.participants[playerFullName] then
+            self.pendingBets[playerFullName] = nil
+            changesMade = true
+            DebugPrint("Cleared local pending bet after sync confirmation: " .. myPending.betId)
+        end
+    end
     
     if conflicts > 0 then
         DebugPrint("Resolved " .. conflicts .. " conflicts during merge")
@@ -1831,6 +2202,9 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
     -- Update UI if changes were made
     if changesMade and self.frame and self.frame:IsShown() then
         self.frame:UpdateBetList()
+    end
+    if changesMade then
+        RefreshOpenInspectDialog()
     end
     
     return changesMade
@@ -1923,6 +2297,11 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             }
             
             DebugPrint("State sync started from " .. sender .. ": v" .. version .. " nonce:" .. nonce .. " expecting " .. betCount .. " bets, " .. participantCount .. " participants")
+
+            -- Handle empty snapshots immediately (no BET/PARTICIPANT chunks will follow).
+            if betCount == 0 and participantCount == 0 then
+                FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
+            end
             
         elseif syncType == SYNC_TYPE_BET then
             -- Bet data: nonce, index, betId, serializedBet
@@ -1980,6 +2359,13 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         
         local bet = FuldStonksDB.activeBets[betId]
         if bet and bet.createdBy == playerFullName then
+            local existingConfirmed = bet.participants[sender]
+            if existingConfirmed and existingConfirmed.option ~= option then
+                DebugPrint("Rejected pending bet from " .. sender .. " due to opposite-side confirmed vote")
+                FuldStonks:BroadcastMessage(MSG_BET_PENDING_REJECT, betId, sender)
+                return
+            end
+
             -- Store pending bet info from this player
             FuldStonks.pendingBets[sender] = {
                 betId = betId,
@@ -1994,6 +2380,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             print("  " .. COLOR_YELLOW .. "Accept their trade to confirm the bet" .. COLOR_RESET)
             
             DebugPrint("Stored pending bet for " .. sender)
+            RefreshOpenInspectDialog()
         else
             DebugPrint("Bet not found or I'm not the creator, ignoring pending bet notification")
         end
@@ -2010,6 +2397,66 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " " .. baseName .. " cancelled their pending bet")
             FuldStonks.pendingBets[sender] = nil
             DebugPrint("Removed pending bet for " .. sender)
+            RefreshOpenInspectDialog()
+        end
+
+    elseif msgType == MSG_BET_PENDING_REJECT then
+        -- Bet creator rejected this pending bet (or removed it manually)
+        local betId = arg1
+        local targetName = arg2
+        local myPending = FuldStonks.pendingBets[playerFullName]
+        local isTargeted = false
+        if targetName then
+            local targetBase = GetPlayerBaseName(targetName)
+            local myBase = GetPlayerBaseName(playerFullName)
+            isTargeted = (targetName == playerFullName) or (targetBase == myBase)
+        end
+        if myPending and myPending.betId == betId and isTargeted then
+            FuldStonks.pendingBets[playerFullName] = nil
+            print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Your pending bet was removed by the bet creator.")
+            RefreshOpenInspectDialog()
+        end
+
+    elseif msgType == MSG_BET_CONFIRMED then
+        -- Fast-path confirmed bet update so clients see participants/pot immediately.
+        local betId = arg1
+        local confirmedPlayer = arg2
+        local option = arg3
+        local amount = tonumber(arg4) or 0
+        local totalPot = tonumber(arg5)
+
+        local bet = FuldStonksDB.activeBets[betId]
+        if bet and bet.createdBy == sender and confirmedPlayer and option and amount > 0 then
+            bet.participants[confirmedPlayer] = {
+                option = option,
+                amount = amount,
+                confirmed = true,
+                timestamp = GetTime()
+            }
+
+            if totalPot then
+                bet.totalPot = totalPot
+            else
+                local recalculated = 0
+                for _, p in pairs(bet.participants) do
+                    recalculated = recalculated + (p.amount or 0)
+                end
+                bet.totalPot = recalculated
+            end
+
+            local myPending = FuldStonks.pendingBets[playerFullName]
+            if myPending and myPending.betId == betId then
+                local confirmedBase = GetPlayerBaseName(confirmedPlayer)
+                local myBase = GetPlayerBaseName(playerFullName)
+                if confirmedPlayer == playerFullName or confirmedBase == myBase then
+                    FuldStonks.pendingBets[playerFullName] = nil
+                end
+            end
+
+            if FuldStonks.frame and FuldStonks.frame:IsShown() then
+                FuldStonks.frame:UpdateBetList()
+            end
+            RefreshOpenInspectDialog()
         end
         
     else
@@ -2406,6 +2853,14 @@ function FuldStonks:PlaceBet(betId, option, amount)
     
     -- Check if player is the bet creator
     local isCreator = (bet.createdBy == playerFullName)
+
+    -- Prevent opposite-side voting for same player on same bet
+    local existingConfirmed = bet.participants[playerFullName]
+    if existingConfirmed and existingConfirmed.option ~= option then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " You already have a confirmed bet on " .. COLOR_YELLOW .. existingConfirmed.option .. COLOR_RESET .. ".")
+        print("  Ask the bet creator to remove your current bet before switching sides.")
+        return
+    end
     
     if isCreator then
         -- Bet creator can participate without trading (can't trade with themselves)
@@ -2484,7 +2939,14 @@ function FuldStonks:ConfirmBetTrade(playerName, betId, option, amount)
         print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Error: Bet not found for confirmation!")
         return
     end
-    
+
+    -- Prevent opposite-side confirmed votes for same player
+    local existingParticipation = bet.participants[playerName]
+    if existingParticipation and existingParticipation.option ~= option then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Rejected confirmation for " .. GetPlayerBaseName(playerName) .. ": already confirmed on " .. existingParticipation.option .. ".")
+        return
+    end
+
     -- Increment state version for this change
     IncrementStateVersion()
     
@@ -2503,6 +2965,11 @@ function FuldStonks:ConfirmBetTrade(playerName, betId, option, amount)
     
     bet.totalPot = bet.totalPot - oldAmount + amount
     bet.stateVersion = FuldStonksDB.stateVersion  -- Update bet's state version
+
+    -- Clear pending entry for this player once confirmed
+    if self.pendingBets[playerName] and self.pendingBets[playerName].betId == betId then
+        self.pendingBets[playerName] = nil
+    end
     
     -- Whisper confirmation to the player
     local betTitle = bet.title
@@ -2512,7 +2979,11 @@ function FuldStonks:ConfirmBetTrade(playerName, betId, option, amount)
     print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Confirmed " .. GetPlayerBaseName(playerName) .. "'s bet: " .. amount .. "g on " .. COLOR_YELLOW .. option .. COLOR_RESET)
     DebugPrint("Confirmed bet: " .. betId .. " | " .. playerName .. " | " .. option .. " | " .. amount .. "g (v" .. FuldStonksDB.stateVersion .. ")")
     
-    -- State will be broadcast in next sync cycle
+    -- Send immediate lightweight participant update for fast UI/inspect refresh on peers.
+    self:BroadcastMessage(MSG_BET_CONFIRMED, betId, playerName, option, tostring(amount), tostring(bet.totalPot))
+
+    -- Broadcast immediately so all open UIs update pot/participant state right away.
+    self:BroadcastStateSync()
     
     -- Update UI if open
     if self.frame and self.frame:IsShown() then
@@ -2522,7 +2993,180 @@ end
 
 function FuldStonks:HideBet(betId)
     FuldStonksDB.ignoredBets[betId] = true
-    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Bet hidden from view. Use /fs showhidden to see hidden bets.")
+    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Bet hidden from view. Use Show hidden in the UI or /fs showhidden.")
+end
+
+function FuldStonks:UnhideBet(betId)
+    if FuldStonksDB.ignoredBets[betId] then
+        FuldStonksDB.ignoredBets[betId] = nil
+        print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Bet unhidden.")
+    end
+end
+
+function FuldStonks:CancelUserBet(betId, targetName, pendingOnly)
+    local bet = FuldStonksDB.activeBets[betId]
+    if not bet then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Bet not found.")
+        return
+    end
+
+    if bet.createdBy ~= playerFullName then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Only the bet creator can remove user bets.")
+        return
+    end
+
+    local query = strtrim((targetName or ""):lower())
+    if query == "" then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Enter a player name (with or without realm).")
+        return
+    end
+
+    local function NameMatches(fullName)
+        local fullLower = (fullName or ""):lower()
+        local baseLower = (GetPlayerBaseName(fullName) or ""):lower()
+        return fullLower == query or baseLower == query
+    end
+
+    local matchedParticipantName = nil
+    for pName, _ in pairs(bet.participants or {}) do
+        if NameMatches(pName) then
+            matchedParticipantName = pName
+            break
+        end
+    end
+
+    local matchedPendingName = nil
+    for pName, pending in pairs(self.pendingBets) do
+        if pending.betId == betId and NameMatches(pName) then
+            matchedPendingName = pName
+            break
+        end
+    end
+
+    local didChangeConfirmed = false
+    local didRemovePending = false
+
+    if not pendingOnly and matchedParticipantName then
+        local removed = bet.participants[matchedParticipantName]
+        bet.participants[matchedParticipantName] = nil
+        bet.totalPot = math.max(0, (bet.totalPot or 0) - (removed.amount or 0))
+        IncrementStateVersion()
+        bet.stateVersion = FuldStonksDB.stateVersion
+        didChangeConfirmed = true
+    end
+
+    if matchedPendingName then
+        self.pendingBets[matchedPendingName] = nil
+        didRemovePending = true
+        self:BroadcastMessage(MSG_BET_PENDING_REJECT, betId, matchedPendingName)
+    end
+
+    if not didChangeConfirmed and not didRemovePending then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " No matching user found on this bet.")
+        return
+    end
+
+    local displayName = GetPlayerBaseName(matchedParticipantName or matchedPendingName)
+    if didChangeConfirmed and didRemovePending then
+        print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Removed " .. displayName .. "'s confirmed and pending entries.")
+    elseif didChangeConfirmed then
+        print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Removed " .. displayName .. "'s confirmed bet.")
+    else
+        print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Removed " .. displayName .. "'s pending bet.")
+    end
+
+    if didChangeConfirmed then
+        self:BroadcastStateSync()
+    end
+
+    if self.frame and self.frame:IsShown() then
+        self.frame:UpdateBetList()
+    end
+    if self.inspectDialog and self.inspectDialog:IsShown() and self.inspectDialog.currentBetId == betId then
+        self:ShowBetInspectDialog(betId)
+    end
+end
+
+-- Dev-only test data generator (local only, not synced)
+function FuldStonks:AddDevRandomEntry()
+    if not FuldStonksDB.devModeEnabled then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Enable Dev mode first.")
+        return
+    end
+
+    local namePool = {"Thorin", "Luna", "Mira", "Brock", "Aela", "Nyx", "Ragnar", "Eryn", "Cora", "Dax", "Vex", "Zane"}
+    local titlePool = {
+        "Will boss die before enrage?",
+        "Will pull be clean?",
+        "Will tank survive first mechanic?",
+        "Will we one-shot this boss?",
+        "Will we clear without wipes?"
+    }
+
+    local function RandomPlayer()
+        local base = namePool[math.random(1, #namePool)] .. tostring(math.random(10, 99))
+        local realm = (playerRealm and playerRealm ~= "" and playerRealm) or "DevRealm"
+        return base .. "-" .. realm
+    end
+
+    local betId = "dev-" .. GenerateBetId()
+    local bet = {
+        id = betId,
+        title = "[DEV] " .. titlePool[math.random(1, #titlePool)],
+        betType = "YesNo",
+        options = {"Yes", "No"},
+        createdBy = playerFullName,
+        timestamp = GetTime(),
+        participants = {},
+        totalPot = 0,
+        status = "active",
+        pendingTrades = {},
+        stateVersion = FuldStonksDB.stateVersion or 0,
+        isDevMock = true
+    }
+
+    local usedNames = {}
+    local confirmedCount = math.random(4, 10)
+    for _ = 1, confirmedCount do
+        local pName = RandomPlayer()
+        while usedNames[pName] do
+            pName = RandomPlayer()
+        end
+        usedNames[pName] = true
+
+        local option = (math.random(1, 2) == 1) and "Yes" or "No"
+        local amount = math.random(5, 80) * 10
+        bet.participants[pName] = {
+            option = option,
+            amount = amount,
+            confirmed = true,
+            timestamp = GetTime() - math.random(10, 1800)
+        }
+        bet.totalPot = bet.totalPot + amount
+    end
+
+    local pendingCount = math.random(0, 3)
+    for _ = 1, pendingCount do
+        local pName = RandomPlayer()
+        while usedNames[pName] do
+            pName = RandomPlayer()
+        end
+        usedNames[pName] = true
+
+        self.pendingBets[pName] = {
+            betId = betId,
+            option = (math.random(1, 2) == 1) and "Yes" or "No",
+            amount = math.random(5, 50) * 10,
+            timestamp = GetTime() - math.random(5, 300)
+        }
+    end
+
+    FuldStonksDB.activeBets[betId] = bet
+    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Added dev demo entry with " .. confirmedCount .. " confirmed bets.")
+
+    if self.frame and self.frame:IsShown() then
+        self.frame:UpdateBetList()
+    end
 end
 
 function FuldStonks:ShowHiddenBets()
@@ -2717,5 +3361,7 @@ function FuldStonks:LoadData()
     FuldStonksDB.myBets = FuldStonksDB.myBets or {}
     FuldStonksDB.betHistory = FuldStonksDB.betHistory or {}
     FuldStonksDB.ignoredBets = FuldStonksDB.ignoredBets or {}
+    FuldStonksDB.showHiddenBets = FuldStonksDB.showHiddenBets or false
+    FuldStonksDB.devModeEnabled = FuldStonksDB.devModeEnabled or false
     DebugPrint("Data loaded from SavedVariables")
 end
