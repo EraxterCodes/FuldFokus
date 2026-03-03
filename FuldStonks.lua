@@ -41,6 +41,7 @@ local STATE_CLEANUP_TIMEOUT = 30  -- Seconds before cleaning up stale state upda
 local SYNC_TYPE_HEADER = "HEADER"
 local SYNC_TYPE_BET = "BET"
 local SYNC_TYPE_PARTICIPANT = "PARTICIPANT"
+local SYNC_TYPE_HISTORY = "HISTORY"
 
 -- Addon state
 FuldStonks.version = "0.3.0"
@@ -217,11 +218,11 @@ local function CreateMainFrame()
     frame.statsHeadersFrame:SetSize(520, 25)
     frame.statsHeadersFrame:Hide()
     
-    frame.winnersHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.winnersHeader = frame.statsHeadersFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.winnersHeader:SetPoint("TOPLEFT", frame.statsHeadersFrame, "TOPLEFT", 0, 0)
     frame.winnersHeader:SetText(COLOR_GREEN .. "Winners" .. COLOR_RESET)
     
-    frame.losersHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.losersHeader = frame.statsHeadersFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.losersHeader:SetPoint("TOPLEFT", frame.statsHeadersFrame, "TOPLEFT", 270, 0)
     frame.losersHeader:SetText(COLOR_RED .. "Losers" .. COLOR_RESET)
     
@@ -405,6 +406,9 @@ local function CreateMainFrame()
         
         -- STATS TAB
         else
+            -- Offset for headers
+            yOffset = 30
+            
             -- Calculate cumulative statistics
             local playerStats = {}
             
@@ -1939,7 +1943,8 @@ function FuldStonks:CreateStateSnapshot()
         nonce = (FuldStonksDB.syncNonce or 0) + 1,
         timestamp = GetTime(),
         bets = {},
-        participants = {}  -- Separate participant data
+        participants = {},  -- Separate participant data
+        history = {}  -- Include resolved bets for statistics sync
     }
     
     FuldStonksDB.syncNonce = snapshot.nonce
@@ -1959,6 +1964,20 @@ function FuldStonks:CreateStateSnapshot()
                     data = SerializeParticipant(playerName, participation)
                 })
             end
+        end
+    end
+    
+    -- Include recent resolved bets for statistics (last 50 for bandwidth)
+    local historyCount = 0
+    for betId, bet in pairs(FuldStonksDB.betHistory) do
+        if historyCount < 50 then
+            table.insert(snapshot.history, {
+                id = betId,
+                status = bet.status,
+                winningOption = bet.winningOption,
+                participants = bet.participants or {}
+            })
+            historyCount = historyCount + 1
         end
     end
     
@@ -2001,13 +2020,13 @@ function FuldStonks:BroadcastStateSync()
     end
 
     -- Send header with the exact chunk counts we will send.
-    local header = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_HEADER, snapshot.version, snapshot.nonce, #sendableBets, #sendableParticipants)
+    local header = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_HEADER, snapshot.version, snapshot.nonce, #sendableBets, #sendableParticipants, #snapshot.history)
     local channel = GetBroadcastChannel()
     if #header <= 255 then
         C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, header, channel)
         -- Only log if there's actual data to broadcast
-        if #sendableBets > 0 or #sendableParticipants > 0 then
-            DebugPrint("↑ Broadcast: v" .. snapshot.version .. " (" .. #sendableBets .. " bets, " .. #sendableParticipants .. " participants)", "SYNC")
+        if #sendableBets > 0 or #sendableParticipants > 0 or #snapshot.history > 0 then
+            DebugPrint("↑ Broadcast: v" .. snapshot.version .. " (" .. #sendableBets .. " bets, " .. #sendableParticipants .. " participants, " .. #snapshot.history .. " history)", "SYNC")
         end
     end
 
@@ -2023,11 +2042,18 @@ function FuldStonks:BroadcastStateSync()
         C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, partMsg, channel)
     end
     
+    -- Send history data (for statistics sync)
+    for i, historyBet in ipairs(snapshot.history) do
+        local historyData = historyBet.id .. "|" .. historyBet.status .. "|" .. (historyBet.winningOption or "")
+        local histMsg = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_HISTORY, snapshot.nonce, i, historyData)
+        C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, histMsg, channel)
+    end
+    
     self.lastBroadcast = GetTime()
 end
 
 -- Merge received state with local state
-function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion, sender)
+function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion, sender, receivedHistory)
     local changesMade = false
     local conflicts = 0
     
@@ -2041,6 +2067,35 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
     
     -- Update our Lamport clock
     UpdateStateVersion(senderVersion)
+    
+    -- Merge received history (resolved/cancelled bets) for statistics
+    if receivedHistory and #receivedHistory > 0 then
+        for _, historyData in ipairs(receivedHistory) do
+            -- Parse history data: betId|status|winningOption
+            local betId, status, winningOption = strsplit("|", historyData)
+            
+            if betId then
+                -- Only add if we don't have it or if this is newer information
+                if not FuldStonksDB.betHistory[betId] then
+                    -- Create a stub entry with received information
+                    FuldStonksDB.betHistory[betId] = {
+                        id = betId,
+                        status = status or "",
+                        winningOption = winningOption and (winningOption ~= "" and winningOption or nil) or nil,
+                        participants = {},  -- Will be populated from other sources
+                        stateVersion = senderVersion
+                    }
+                    changesMade = true
+                elseif senderVersion > (FuldStonksDB.betHistory[betId].stateVersion or 0) then
+                    -- Update if we have newer information
+                    FuldStonksDB.betHistory[betId].status = status or ""
+                    FuldStonksDB.betHistory[betId].winningOption = winningOption and (winningOption ~= "" and winningOption or nil) or nil
+                    FuldStonksDB.betHistory[betId].stateVersion = senderVersion
+                    changesMade = true
+                end
+            end
+        end
+    end
     
     -- Process each received bet
     for betId, receivedBet in pairs(receivedBets) do
@@ -2250,7 +2305,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         return
     end
     
-    local msgType, senderVersion, arg1, arg2, arg3, arg4, arg5 = DeserializeMessage(message)
+    local msgType, senderVersion, arg1, arg2, arg3, arg4, arg5, arg6 = DeserializeMessage(message)
     
     -- Version check: Only accept messages from same addon version (silently ignore mismatches)
     if senderVersion ~= FuldStonks.version then
@@ -2282,11 +2337,12 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         local syncType = arg1  -- SYNC_TYPE_HEADER, SYNC_TYPE_BET, or SYNC_TYPE_PARTICIPANT
         
         if syncType == SYNC_TYPE_HEADER then
-            -- State sync header: version, nonce, betCount, participantCount
+            -- State sync header: version, nonce, betCount, participantCount, historyCount
             local version = tonumber(arg2) or 0
             local nonce = tonumber(arg3) or 0
             local betCount = tonumber(arg4) or 0
             local participantCount = tonumber(arg5) or 0
+            local historyCount = tonumber(arg6) or 0
             
             FuldStonks.peers[sender].stateVersion = version
             FuldStonks.peers[sender].nonce = nonce
@@ -2300,15 +2356,17 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                 version = version,
                 expectedBets = betCount,
                 expectedParticipants = participantCount,
+                expectedHistory = historyCount,
                 receivedBets = {},
                 receivedParticipants = {},
+                receivedHistory = {},
                 timestamp = now
             }
             
-            DebugPrint("← Sync from " .. GetPlayerBaseName(sender) .. ": v" .. version .. " nonce:" .. nonce .. " (" .. betCount .. " bets, " .. participantCount .. " participants)", "SYNC")
+            DebugPrint("← Sync from " .. GetPlayerBaseName(sender) .. ": v" .. version .. " nonce:" .. nonce .. " (" .. betCount .. " bets, " .. participantCount .. " participants, " .. historyCount .. " history)", "SYNC")
 
-            -- Handle empty snapshots immediately (no BET/PARTICIPANT chunks will follow).
-            if betCount == 0 and participantCount == 0 then
+            -- Handle empty snapshots immediately (no BET/PARTICIPANT/HISTORY chunks will follow).
+            if betCount == 0 and participantCount == 0 and historyCount == 0 then
                 FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
             end
             
@@ -2343,6 +2401,21 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                         FuldStonks.pendingStateUpdates[sender][nonce].receivedParticipants[betId] = {}
                     end
                     FuldStonks.pendingStateUpdates[sender][nonce].receivedParticipants[betId][playerName] = participation
+                    
+                    -- Check if we've received all expected data
+                    FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
+                end
+            end
+            
+        elseif syncType == SYNC_TYPE_HISTORY then
+            -- History data: nonce, index, historyData (betId|status|winningOption)
+            local nonce = tonumber(arg2) or 0
+            local index = tonumber(arg3) or 0
+            local historyData = arg4
+            
+            if FuldStonks.pendingStateUpdates[sender] and FuldStonks.pendingStateUpdates[sender][nonce] then
+                if historyData then
+                    table.insert(FuldStonks.pendingStateUpdates[sender][nonce].receivedHistory, historyData)
                     
                     -- Check if we've received all expected data
                     FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
@@ -2504,10 +2577,12 @@ function FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
         end
     end
     
+    local receivedHistoryCount = #(update.receivedHistory or {})
+    
     -- Check if we have all the data
-    if receivedBetCount >= update.expectedBets and receivedParticipantCount >= update.expectedParticipants then
-        -- Apply the state update
-        self:MergeState(update.receivedBets, update.receivedParticipants, update.version, sender)
+    if receivedBetCount >= update.expectedBets and receivedParticipantCount >= update.expectedParticipants and receivedHistoryCount >= (update.expectedHistory or 0) then
+        -- Apply the state update (merge also handles history)
+        self:MergeState(update.receivedBets, update.receivedParticipants, update.version, sender, update.receivedHistory)
         
         -- Clean up
         self.pendingStateUpdates[sender][nonce] = nil
