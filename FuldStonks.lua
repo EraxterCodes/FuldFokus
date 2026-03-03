@@ -55,6 +55,7 @@ FuldStonks.rosterUpdateTimer = nil  -- Debounce timer for roster updates
 FuldStonks.betIdCounter = 0      -- Counter for generating unique bet IDs
 FuldStonks.pendingBets = {}      -- Track pending bets awaiting gold trade: {betId, option, amount}
 FuldStonks.pendingStateUpdates = {}  -- Queue for state updates to be applied
+FuldStonks.updateWarningShown = false  -- Track if update warning has been shown
 
 -- Event frame for initialization
 local eventFrame = CreateFrame("Frame")
@@ -62,6 +63,20 @@ local eventFrame = CreateFrame("Frame")
 -- Get player's full name (Name-Realm)
 local playerName, playerRealm = UnitFullName("player")
 local playerFullName = (playerRealm and playerRealm ~= "" and (playerName .. "-" .. playerRealm)) or playerName
+
+-- Helper function to compare versions (returns true if v1 > v2)
+local function CompareVersions(v1, v2)
+    local v1Parts = {v1:match("(%d+)%.(%d+)%.(%d+)")}
+    local v2Parts = {v2:match("(%d+)%.(%d+)%.(%d+)")}
+    
+    for i = 1, 3 do
+        local n1 = tonumber(v1Parts[i]) or 0
+        local n2 = tonumber(v2Parts[i]) or 0
+        if n1 > n2 then return true end
+        if n1 < n2 then return false end
+    end
+    return false
+end
 
 -- Helper function for debug output
 local function DebugPrint(msg, category)
@@ -2377,8 +2392,26 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
     
     local msgType, senderVersion, arg1, arg2, arg3, arg4, arg5, arg6 = DeserializeMessage(message)
     
-    -- Version check: Only accept messages from same addon version (silently ignore mismatches)
+    -- Version check: Warn if receiving higher version, ignore if different
     if senderVersion ~= FuldStonks.version then
+        if not FuldStonks.updateWarningShown and CompareVersions(senderVersion, FuldStonks.version) then
+            -- Sender has a higher version
+            FuldStonks.updateWarningShown = true
+            print(COLOR_RED .. "==============================================" .. COLOR_RESET)
+            print(COLOR_RED .. "FuldStonks - NEW UPDATE AVAILABLE!" .. COLOR_RESET)
+            print(COLOR_YELLOW .. "You have version " .. FuldStonks.version .. ", but version " .. senderVersion .. " is available." .. COLOR_RESET)
+            print(COLOR_YELLOW .. "Please update to continue syncing with other players." .. COLOR_RESET)
+            print(COLOR_RED .. "==============================================" .. COLOR_RESET)
+            
+            -- Show warning in UI if frame exists
+            if FuldStonks.frame and not FuldStonks.frame.updateWarning then
+                local warning = FuldStonks.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                warning:SetPoint("TOP", FuldStonks.frame, "TOP", 0, -100)
+                warning:SetText(COLOR_RED .. "⚠ NEW UPDATE AVAILABLE ⚠" .. COLOR_RESET .. "\n" .. COLOR_YELLOW .. "Please update FuldStonks to v" .. senderVersion .. COLOR_RESET)
+                warning:SetJustifyH("CENTER")
+                FuldStonks.frame.updateWarning = warning
+            end
+        end
         return
     end
     
