@@ -255,12 +255,6 @@ local function CreateMainFrame()
             self.showHiddenCheck:Hide()
             self.showHiddenLabel:Hide()
         end
-
-        if FuldStonksDB.devModeEnabled and self.currentTab == "active" then
-            self.devEntryButton:Show()
-        else
-            self.devEntryButton:Hide()
-        end
         
         local yOffset = 0
         local betCount = 0
@@ -1722,7 +1716,11 @@ local function SlashCommandHandler(msg)
     
     if command == "" then
         -- Default: toggle UI
-        FuldStonks.ToggleMainFrame()
+        print("DEBUG: Empty command, calling ToggleMainFrame")
+        local success, err = pcall(function() FuldStonks.ToggleMainFrame() end)
+        if not success then
+            print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Error: " .. tostring(err))
+        end
     elseif command == "help" then
         print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Commands:")
         print("  /FuldStonks or /fs - Toggle main UI")
