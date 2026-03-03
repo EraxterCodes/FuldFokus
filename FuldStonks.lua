@@ -1717,7 +1717,10 @@ end
 local function SlashCommandHandler(msg)
     local command = strtrim(msg:lower())
     
-    if command == "help" then
+    if command == "" then
+        -- Default: toggle UI
+        FuldStonks.ToggleMainFrame()
+    elseif command == "help" then
         print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Commands:")
         print("  /FuldStonks or /fs - Toggle main UI")
         print("  /FuldStonks help - Show this help message")
