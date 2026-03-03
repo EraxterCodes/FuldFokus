@@ -49,6 +49,7 @@ FuldStonks.peers = {}           -- Track connected peers: [fullName] = { lastSee
 FuldStonks.lastBroadcast = 0    -- Rate limiting for broadcasts
 FuldStonks.syncRequested = false
 FuldStonks.syncTicker = nil     -- Store state sync ticker for cleanup (replaces heartbeat)
+FuldStonks.lastBroadcastState = nil  -- Track last broadcast state to avoid spam
 FuldStonks.rosterUpdateTimer = nil  -- Debounce timer for roster updates
 FuldStonks.betIdCounter = 0      -- Counter for generating unique bet IDs
 FuldStonks.pendingBets = {}      -- Track pending bets awaiting gold trade: {betId, option, amount}
@@ -666,24 +667,17 @@ end
 
 -- Toggle main frame visibility
 function FuldStonks.ToggleMainFrame()
-    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " ToggleMainFrame() called")
-    
     -- Check if feature is enabled
     if not FULDSTONKS_ENABLED then
-        print(COLOR_RED .. "[FS DEBUG]" .. COLOR_RESET .. " Feature not enabled")
         ShowComingSoonDialog()
         return
     end
     
-    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Creating/accessing frame...")
     local frame = CreateMainFrame()
-    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Frame created: " .. tostring(frame))
     
     if frame:IsShown() then
-        print(COLOR_YELLOW .. "[FS DEBUG]" .. COLOR_RESET .. " Hiding frame")
         frame:Hide()
     else
-        print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Showing frame")
         frame:Show()
     end
 end
@@ -1726,17 +1720,9 @@ local function SlashCommandHandler(msg)
     msg = msg or ""
     local command = strtrim(msg:lower())
     
-    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Handler called with: '" .. command .. "'")
-    
     if command == "" then
         -- Default: toggle UI
-        print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Attempting to toggle frame...")
-        local success, err = pcall(function() FuldStonks.ToggleMainFrame() end)
-        if not success then
-            print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Error: " .. tostring(err))
-        else
-            print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Toggle successful!")
-        end
+        FuldStonks.ToggleMainFrame()
     elseif command == "help" then
         print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Commands:")
         print("  /FuldStonks or /fs - Toggle main UI")
@@ -2010,6 +1996,15 @@ end
 -- Broadcast full state sync
 function FuldStonks:BroadcastStateSync()
     local snapshot = self:CreateStateSnapshot()
+    
+    -- Build a state signature to check for changes
+    local stateSignature = snapshot.version .. "|" .. #snapshot.bets .. "|" .. #snapshot.participants
+    
+    -- Skip if nothing changed since last broadcast
+    if self.lastBroadcastState == stateSignature then
+        return
+    end
+    self.lastBroadcastState = stateSignature
 
     -- Build a sendable payload first so header counts match what is actually sent.
     -- Otherwise receivers can wait forever for chunks that were skipped.
@@ -2020,8 +2015,6 @@ function FuldStonks:BroadcastStateSync()
         if #preview <= 255 then
             table.insert(sendableBets, betData)
             sendableBetIds[betData.id] = true
-        else
-            DebugPrint("Bet message too long (" .. #preview .. " chars), skipping: " .. betData.id)
         end
     end
 
@@ -2031,8 +2024,6 @@ function FuldStonks:BroadcastStateSync()
             local preview = SerializeMessage(MSG_STATE_SYNC, SYNC_TYPE_PARTICIPANT, snapshot.nonce, 1, participantData.betId, participantData.data)
             if #preview <= 255 then
                 table.insert(sendableParticipants, participantData)
-            else
-                DebugPrint("Participant message too long, skipping betId: " .. participantData.betId)
             end
         end
     end
@@ -2042,7 +2033,8 @@ function FuldStonks:BroadcastStateSync()
     local channel = GetBroadcastChannel()
     if #header <= 255 then
         C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, header, channel)
-        if FuldStonksDB.debug == true and (#sendableBets > 0 or #sendableParticipants > 0) then
+        -- Only log if there's actual data to broadcast
+        if #sendableBets > 0 or #sendableParticipants > 0 then
             DebugPrint("↑ Broadcast: v" .. snapshot.version .. " (" .. #sendableBets .. " bets, " .. #sendableParticipants .. " participants)", "SYNC")
         end
     end
