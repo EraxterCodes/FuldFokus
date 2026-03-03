@@ -1801,7 +1801,7 @@ local function SlashCommandHandler(msg)
         FuldStonks:UnhideAllBets()
     else
         -- Default: toggle UI
-        ToggleMainFrame()
+        FuldStonks.ToggleMainFrame()
     end
 end
 
@@ -1940,7 +1940,11 @@ end
 
 -- Refresh inspect dialogs if currently open
 local function RefreshOpenInspectDialog()
-    if not FuldStonks.inspectDialog or not FuldStonks.inspectDialog:IsShown() then
+    if not FuldStonks.inspectDialog then
+        return
+    end
+    
+    if not FuldStonks.inspectDialog:IsShown() then
         return
     end
 
@@ -2380,6 +2384,11 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             print("  " .. COLOR_YELLOW .. "Accept their trade to confirm the bet" .. COLOR_RESET)
             
             DebugPrint("Stored pending bet for " .. sender)
+            
+            -- Update UI immediately to show pending bet
+            if FuldStonks.frame and FuldStonks.frame:IsShown() then
+                FuldStonks.frame:UpdateBetList()
+            end
             RefreshOpenInspectDialog()
         else
             DebugPrint("Bet not found or I'm not the creator, ignoring pending bet notification")
@@ -2397,6 +2406,11 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " " .. baseName .. " cancelled their pending bet")
             FuldStonks.pendingBets[sender] = nil
             DebugPrint("Removed pending bet for " .. sender)
+            
+            -- Update UI immediately
+            if FuldStonks.frame and FuldStonks.frame:IsShown() then
+                FuldStonks.frame:UpdateBetList()
+            end
             RefreshOpenInspectDialog()
         end
 
@@ -2427,6 +2441,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
 
         local bet = FuldStonksDB.activeBets[betId]
         if bet and bet.createdBy == sender and confirmedPlayer and option and amount > 0 then
+            -- Update participant data
             bet.participants[confirmedPlayer] = {
                 option = option,
                 amount = amount,
@@ -2434,6 +2449,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                 timestamp = GetTime()
             }
 
+            -- Update total pot
             if totalPot then
                 bet.totalPot = totalPot
             else
@@ -2444,19 +2460,24 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                 bet.totalPot = recalculated
             end
 
+            -- Clear pending bet for the confirmed player (if we have any pending bets on this bet)
             local myPending = FuldStonks.pendingBets[playerFullName]
             if myPending and myPending.betId == betId then
                 local confirmedBase = GetPlayerBaseName(confirmedPlayer)
                 local myBase = GetPlayerBaseName(playerFullName)
                 if confirmedPlayer == playerFullName or confirmedBase == myBase then
                     FuldStonks.pendingBets[playerFullName] = nil
+                    DebugPrint("Cleared pending bet for " .. playerFullName .. " due to confirmation")
                 end
             end
 
+            -- Update UI for all participants
             if FuldStonks.frame and FuldStonks.frame:IsShown() then
                 FuldStonks.frame:UpdateBetList()
             end
             RefreshOpenInspectDialog()
+            
+            DebugPrint("Processed bet confirmation: " .. confirmedPlayer .. " for " .. betId)
         end
         
     else
@@ -2656,11 +2677,21 @@ local function OnTradeClosed()
             DebugPrint("Gold before trade: " .. tradeInfo.goldBefore .. "g, after: " .. currentGold .. "g, increase: " .. goldIncrease .. "g")
             
             local pendingBet = tradeInfo.betInfo
+            if not pendingBet then
+                DebugPrint("No pending bet info available")
+                return
+            end
+            
             local traderName = tradeInfo.traderName
             local bet = FuldStonksDB.activeBets[pendingBet.betId]
             
-            -- Only confirm if we are the bet creator and received the correct amount
-            if bet and bet.createdBy == playerFullName then
+            if not bet then
+                DebugPrint("Bet not found, cannot process trade")
+                return
+            end
+            
+            -- CASE 1: We are the bet creator and received gold from a participant
+            if bet.createdBy == playerFullName then
                 if goldIncrease == pendingBet.amount then
                     print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Trade completed successfully! Confirming bet...")
                     DebugPrint("Received " .. goldIncrease .. "g, matches expected " .. pendingBet.amount .. "g")
@@ -2676,6 +2707,22 @@ local function OnTradeClosed()
                     print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Trade amount mismatch! Expected " .. pendingBet.amount .. "g but received " .. goldIncrease .. "g")
                 else
                     DebugPrint("Trade was cancelled or failed - no gold received")
+                end
+            -- CASE 2: We are a participant who just traded gold to the creator
+            else
+                -- We initiated the trade and sent the gold
+                -- Clear our pending bet immediately for better UX
+                if FuldStonks.pendingBets[playerFullName] and FuldStonks.pendingBets[playerFullName].betId == pendingBet.betId then
+                    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Trade completed! Waiting for creator to confirm...")
+                    -- Keep the pending bet in our tracking but mark it as traded
+                    -- It will be cleared when we receive confirmation from the creator
+                    DebugPrint("Trade sent for pending bet: " .. pendingBet.betId)
+                    
+                    -- Update UI to show that confirmation is pending
+                    if FuldStonks.frame and FuldStonks.frame:IsShown() then
+                        FuldStonks.frame:UpdateBetList()
+                    end
+                    RefreshOpenInspectDialog()
                 end
             end
         end)
@@ -2979,16 +3026,17 @@ function FuldStonks:ConfirmBetTrade(playerName, betId, option, amount)
     print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Confirmed " .. GetPlayerBaseName(playerName) .. "'s bet: " .. amount .. "g on " .. COLOR_YELLOW .. option .. COLOR_RESET)
     DebugPrint("Confirmed bet: " .. betId .. " | " .. playerName .. " | " .. option .. " | " .. amount .. "g (v" .. FuldStonksDB.stateVersion .. ")")
     
+    -- Update local UI immediately BEFORE broadcasting (ensures the confirming player sees it right away)
+    if self.frame and self.frame:IsShown() then
+        self.frame:UpdateBetList()
+    end
+    RefreshOpenInspectDialog()
+    
     -- Send immediate lightweight participant update for fast UI/inspect refresh on peers.
     self:BroadcastMessage(MSG_BET_CONFIRMED, betId, playerName, option, tostring(amount), tostring(bet.totalPot))
 
     -- Broadcast immediately so all open UIs update pot/participant state right away.
     self:BroadcastStateSync()
-    
-    -- Update UI if open
-    if self.frame and self.frame:IsShown() then
-        self.frame:UpdateBetList()
-    end
 end
 
 function FuldStonks:HideBet(betId)
