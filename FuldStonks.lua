@@ -209,25 +209,6 @@ local function CreateMainFrame()
     frame.showHiddenLabel:SetPoint("RIGHT", frame.showHiddenCheck, "LEFT", -2, 0)
     frame.showHiddenLabel:SetText("Show hidden")
     frame.showHiddenLabel:SetTextColor(0.85, 0.85, 0.85)
-
-    -- Dev mode toggle
-    frame.devModeCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    frame.devModeCheck:SetPoint("TOPRIGHT", frame.showHiddenCheck, "BOTTOMRIGHT", 0, -6)
-    frame.devModeCheck:SetChecked(FuldStonksDB.devModeEnabled == true)
-    frame.devModeCheck:SetScript("OnClick", function(btn)
-        FuldStonksDB.devModeEnabled = btn:GetChecked() and true or false
-        frame:UpdateBetList()
-        if FuldStonksDB.devModeEnabled then
-            print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Dev mode enabled.")
-        else
-            print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Dev mode disabled.")
-        end
-    end)
-
-    frame.devModeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.devModeLabel:SetPoint("RIGHT", frame.devModeCheck, "LEFT", -2, 0)
-    frame.devModeLabel:SetText("Dev mode")
-    frame.devModeLabel:SetTextColor(0.85, 0.85, 0.85)
     
     -- Scrollable bet list (adjusted to leave room for bottom button)
     frame.betList = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
@@ -248,15 +229,7 @@ local function CreateMainFrame()
         FuldStonks:ShowBetCreationDialog()
     end)
 
-    -- Dev button (visible only when dev mode is enabled on active tab)
-    frame.devEntryButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    frame.devEntryButton:SetSize(150, 28)
-    frame.devEntryButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 16)
-    frame.devEntryButton:SetText("Add Demo Entry")
-    frame.devEntryButton:SetScript("OnClick", function()
-        FuldStonks:AddDevRandomEntry()
-    end)
-    frame.devEntryButton:Hide()
+
     
     -- Function to update bet list display
     frame.UpdateBetList = function(self)
@@ -1808,6 +1781,14 @@ local function SlashCommandHandler(msg)
         FuldStonks:ShowHiddenBets()
     elseif command == "unhideall" then
         FuldStonks:UnhideAllBets()
+    elseif command:sub(1, 7) == "delete " then
+        -- Master delete command: /fs delete <betId> <password>
+        local args = {strsplit(" ", command)}
+        if args[2] and args[3] then
+            FuldStonks:MasterDelete(args[2], args[3])
+        else
+            print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Usage: /fs delete <betId> <password>")
+        end
     else
         -- Default: toggle UI
         FuldStonks.ToggleMainFrame()
@@ -1984,7 +1965,7 @@ function FuldStonks:CreateStateSnapshot()
     
     -- Collect all active bets
     for betId, bet in pairs(FuldStonksDB.activeBets) do
-        if bet.status == "active" and not bet.isDevMock then
+        if bet.status == "active" then
             table.insert(snapshot.bets, {
                 id = betId,
                 data = SerializeBetForSync(bet)
@@ -3107,82 +3088,29 @@ function FuldStonks:CancelUserBet(betId, targetName, pendingOnly)
 end
 
 -- Dev-only test data generator (local only, not synced)
-function FuldStonks:AddDevRandomEntry()
-    if not FuldStonksDB.devModeEnabled then
-        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Enable Dev mode first.")
+-- Master override to force delete any bet (protected by silly password)
+function FuldStonks:MasterDelete(betId, password)
+    if password ~= "fuldmaster2025" then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Incorrect master password.")
         return
     end
 
-    local namePool = {"Thorin", "Luna", "Mira", "Brock", "Aela", "Nyx", "Ragnar", "Eryn", "Cora", "Dax", "Vex", "Zane"}
-    local titlePool = {
-        "Will boss die before enrage?",
-        "Will pull be clean?",
-        "Will tank survive first mechanic?",
-        "Will we one-shot this boss?",
-        "Will we clear without wipes?"
-    }
-
-    local function RandomPlayer()
-        local base = namePool[math.random(1, #namePool)] .. tostring(math.random(10, 99))
-        local realm = (playerRealm and playerRealm ~= "" and playerRealm) or "DevRealm"
-        return base .. "-" .. realm
+    local bet = FuldStonksDB.activeBets[betId]
+    if not bet then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Bet not found.")
+        return
     end
 
-    local betId = "dev-" .. GenerateBetId()
-    local bet = {
-        id = betId,
-        title = "[DEV] " .. titlePool[math.random(1, #titlePool)],
-        betType = "YesNo",
-        options = {"Yes", "No"},
-        createdBy = playerFullName,
-        timestamp = GetTime(),
-        participants = {},
-        totalPot = 0,
-        status = "active",
-        pendingTrades = {},
-        stateVersion = FuldStonksDB.stateVersion or 0,
-        isDevMock = true
-    }
-
-    local usedNames = {}
-    local confirmedCount = math.random(4, 10)
-    for _ = 1, confirmedCount do
-        local pName = RandomPlayer()
-        while usedNames[pName] do
-            pName = RandomPlayer()
-        end
-        usedNames[pName] = true
-
-        local option = (math.random(1, 2) == 1) and "Yes" or "No"
-        local amount = math.random(5, 80) * 10
-        bet.participants[pName] = {
-            option = option,
-            amount = amount,
-            confirmed = true,
-            timestamp = GetTime() - math.random(10, 1800)
-        }
-        bet.totalPot = bet.totalPot + amount
-    end
-
-    local pendingCount = math.random(0, 3)
-    for _ = 1, pendingCount do
-        local pName = RandomPlayer()
-        while usedNames[pName] do
-            pName = RandomPlayer()
-        end
-        usedNames[pName] = true
-
-        self.pendingBets[pName] = {
-            betId = betId,
-            option = (math.random(1, 2) == 1) and "Yes" or "No",
-            amount = math.random(5, 50) * 10,
-            timestamp = GetTime() - math.random(5, 300)
-        }
-    end
-
-    FuldStonksDB.activeBets[betId] = bet
-    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Added dev demo entry with " .. confirmedCount .. " confirmed bets.")
-
+    local betTitle = bet.title
+    FuldStonksDB.activeBets[betId] = nil
+    
+    -- Broadcast the deletion to all peers
+    IncrementStateVersion()
+    FuldStonks:BroadcastStateSync()
+    
+    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Master deleted bet: " .. betTitle)
+    DebugPrint("Master deleted: " .. betId, "MASTER")
+    
     if self.frame and self.frame:IsShown() then
         self.frame:UpdateBetList()
     end
