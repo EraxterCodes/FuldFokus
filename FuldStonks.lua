@@ -163,7 +163,7 @@ local function CreateMainFrame()
     frame.title:SetText("FuldStonks - Guild Betting")
     
     -- Tab system
-    frame.currentTab = "active"  -- "active" or "history"
+    frame.currentTab = "active"  -- "active" or "stats"
     
     -- Active Bets tab button
     frame.activeTab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -174,18 +174,18 @@ local function CreateMainFrame()
         frame.currentTab = "active"
         frame:UpdateBetList()
         frame.activeTab:Disable()
-        frame.historyTab:Enable()
+        frame.statsTab:Enable()
     end)
     
-    -- History tab button
-    frame.historyTab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    frame.historyTab:SetSize(140, 28)
-    frame.historyTab:SetPoint("TOPLEFT", frame.activeTab, "TOPRIGHT", 5, 0)
-    frame.historyTab:SetText("History")
-    frame.historyTab:SetScript("OnClick", function()
-        frame.currentTab = "history"
+    -- Stats tab button
+    frame.statsTab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.statsTab:SetSize(140, 28)
+    frame.statsTab:SetPoint("TOPLEFT", frame.activeTab, "TOPRIGHT", 5, 0)
+    frame.statsTab:SetText("Stats")
+    frame.statsTab:SetScript("OnClick", function()
+        frame.currentTab = "stats"
         frame:UpdateBetList()
-        frame.historyTab:Disable()
+        frame.statsTab:Disable()
         frame.activeTab:Enable()
     end)
     
@@ -210,6 +210,20 @@ local function CreateMainFrame()
     frame.showHiddenLabel:SetPoint("RIGHT", frame.showHiddenCheck, "LEFT", -2, 0)
     frame.showHiddenLabel:SetText("Show hidden")
     frame.showHiddenLabel:SetTextColor(0.85, 0.85, 0.85)
+    
+    -- Stats headers (shown in stats tab)
+    frame.statsHeadersFrame = CreateFrame("Frame", nil, frame)
+    frame.statsHeadersFrame:SetPoint("TOPLEFT", frame.tabTitle, "BOTTOMLEFT", -5, -8)
+    frame.statsHeadersFrame:SetSize(520, 25)
+    frame.statsHeadersFrame:Hide()
+    
+    frame.winnersHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.winnersHeader:SetPoint("TOPLEFT", frame.statsHeadersFrame, "TOPLEFT", 0, 0)
+    frame.winnersHeader:SetText(COLOR_GREEN .. "Winners" .. COLOR_RESET)
+    
+    frame.losersHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.losersHeader:SetPoint("TOPLEFT", frame.statsHeadersFrame, "TOPLEFT", 270, 0)
+    frame.losersHeader:SetText(COLOR_RED .. "Losers" .. COLOR_RESET)
     
     -- Scrollable bet list (adjusted to leave room for bottom button)
     frame.betList = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
@@ -240,32 +254,34 @@ local function CreateMainFrame()
             child:SetParent(nil)
         end
 
-        -- Hide reusable "no bets" message (created on demand below)
+        -- Hide reusable "no bets" message
         if self.noBetsText then
             self.noBetsText:Hide()
         end
         
-        -- Update tab title
+        -- Update tab title and visibility
         if self.currentTab == "active" then
             self.tabTitle:SetText("Active Bets:")
             self.showHiddenCheck:Show()
             self.showHiddenLabel:Show()
-        else
-            self.tabTitle:SetText("Bet History:")
+            self.statsHeadersFrame:Hide()
+        else -- stats
+            self.tabTitle:SetText("Statistics:")
             self.showHiddenCheck:Hide()
             self.showHiddenLabel:Hide()
+            self.statsHeadersFrame:Show()
         end
         
         local yOffset = 0
         local betCount = 0
-        local activeTotalCount = 0
-        local activeHiddenCount = 0
-        local showHidden = (FuldStonksDB.showHiddenBets == true)
+        local activeTotalCount, activeHiddenCount, showHidden = 0, 0, false
         
-        -- Display bets based on current tab
-        local betsToShow = {}
+        -- ACTIVE BETS TAB
         if self.currentTab == "active" then
-            -- Show active bets
+            showHidden = (FuldStonksDB.showHiddenBets == true)
+            local betsToShow = {}
+            
+            -- Collect visible active bets
             for betId, bet in pairs(FuldStonksDB.activeBets) do
                 if bet.status == "active" then
                     activeTotalCount = activeTotalCount + 1
@@ -279,160 +295,36 @@ local function CreateMainFrame()
                     end
                 end
             end
-        else
-            -- Show history (resolved and cancelled bets)
-            -- Only show bets the user participated in or created
-            for betId, bet in pairs(FuldStonksDB.betHistory) do
-                local userParticipated = false
-                local myBaseName = GetPlayerBaseName(playerFullName)
-                
-                -- Check if user created the bet
-                if bet.createdBy == playerFullName or GetPlayerBaseName(bet.createdBy) == myBaseName then
-                    userParticipated = true
-                else
-                    -- Check if user was a participant
-                    for participantName, _ in pairs(bet.participants or {}) do
-                        if participantName == playerFullName or GetPlayerBaseName(participantName) == myBaseName then
-                            userParticipated = true
-                            break
-                        end
-                    end
-                end
-                
-                -- Only add if user participated
-                if userParticipated then
-                    table.insert(betsToShow, {id = betId, bet = bet})
-                end
-            end
-            -- Sort history by resolution time (most recent first)
-            table.sort(betsToShow, function(a, b)
-                local aTime = a.bet.resolvedAt or a.bet.cancelledAt or 0
-                local bTime = b.bet.resolvedAt or b.bet.cancelledAt or 0
-                return aTime > bTime
-            end)
-        end
-        
-        -- Create bet frames
-        for _, betData in ipairs(betsToShow) do
-            local betId = betData.id
-            local bet = betData.bet
-            local isHidden = betData.isHidden == true
-            local isHistory = (self.currentTab == "history")
             
-            local betFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
-            local betFrameHeight = isHistory and 90 or 110
-            betFrame:SetSize(520, betFrameHeight)
-            betFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 0, -yOffset)
-            betFrame:SetBackdrop({
-                bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-                edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-                tile = true, tileSize = 16, edgeSize = 16,
-                insets = { left = 4, right = 4, top = 4, bottom = 4 }
-            })
-            
-            -- Color code: darker for history, normal for active
-            if isHistory then
-                -- Determine user's outcome for this bet
-                local userParticipation = bet.participants[playerFullName]
-                local isCreator = (bet.createdBy == playerFullName)
+            -- Render each active bet
+            for _, betData in ipairs(betsToShow) do
+                local betId = betData.id
+                local bet = betData.bet
+                local isHidden = betData.isHidden == true
                 
-                -- Check if user was pending when bet closed (only matters if not creator)
-                local userWasPending = not isCreator and 
-                                      FuldStonks.pendingBets[playerFullName] and 
-                                      FuldStonks.pendingBets[playerFullName].betId == betId
-                
-                if bet.status == "resolved" then
-                    if userParticipation then
-                        -- Check if user won or lost
-                        local userWon = (userParticipation.option == bet.winningOption)
-                        if userWon then
-                            -- User won (green)
-                            betFrame:SetBackdropColor(0.05, 0.20, 0.05, 0.8)  -- Bright green for won
-                            betFrame:SetBackdropBorderColor(0.2, 0.8, 0.2, 1)
-                        else
-                            -- User lost (red)
-                            betFrame:SetBackdropColor(0.20, 0.05, 0.05, 0.8)  -- Bright red for lost
-                            betFrame:SetBackdropBorderColor(0.8, 0.2, 0.2, 1)
-                        end
-                    elseif userWasPending then
-                        -- User was pending when resolved (orange)
-                        betFrame:SetBackdropColor(0.15, 0.10, 0.05, 0.8)  -- Orange tint for pending
-                        betFrame:SetBackdropBorderColor(0.8, 0.5, 0.2, 1)
-                    else
-                        -- Creator or spectator who didn't participate (neutral)
-                        betFrame:SetBackdropColor(0.08, 0.12, 0.08, 0.8)  -- Slight green tint (resolved)
-                        betFrame:SetBackdropBorderColor(0.3, 0.6, 0.3, 1)
-                    end
-                elseif bet.status == "cancelled" then
-                    if userWasPending then
-                        -- User was pending when cancelled (orange)
-                        betFrame:SetBackdropColor(0.15, 0.10, 0.05, 0.8)  -- Orange tint for pending
-                        betFrame:SetBackdropBorderColor(0.8, 0.5, 0.2, 1)
-                    else
-                        -- Cancelled (red tint) - applies to participants, creators, and spectators
-                        betFrame:SetBackdropColor(0.15, 0.05, 0.05, 0.8)
-                        betFrame:SetBackdropBorderColor(0.6, 0.2, 0.2, 1)
-                    end
-                else
-                    -- Default (shouldn't happen, but just in case)
-                    betFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-                    betFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-                end
-            else
+                local betFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
+                betFrame:SetSize(520, 110)
+                betFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 0, -yOffset)
+                betFrame:SetBackdrop({
+                    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+                    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+                    tile = true, tileSize = 16, edgeSize = 16,
+                    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+                })
                 betFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
                 betFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-            end
-            
-            -- Bet title
-            local title = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-            title:SetPoint("TOPLEFT", betFrame, "TOPLEFT", 10, -8)
-            title:SetText(bet.title)
-            title:SetJustifyH("LEFT")
-            title:SetWidth(isHistory and 410 or 500)
-            title:SetWordWrap(false)
-            
-            -- Status indicator for history
-            if isHistory then
-                local statusText = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                statusText:SetPoint("TOPRIGHT", betFrame, "TOPRIGHT", -8, -8)
                 
-                -- Determine user's outcome
-                local userParticipation = bet.participants[playerFullName]
-                local isCreator = (bet.createdBy == playerFullName)
-                local userWasPending = not isCreator and 
-                                      FuldStonks.pendingBets[playerFullName] and 
-                                      FuldStonks.pendingBets[playerFullName].betId == betId
+                -- Bet title
+                local title = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                title:SetPoint("TOPLEFT", betFrame, "TOPLEFT", 10, -8)
+                title:SetText(bet.title)
+                title:SetJustifyH("LEFT")
+                title:SetWidth(445)
                 
-                if bet.status == "resolved" then
-                    if userParticipation then
-                        local userWon = (userParticipation.option == bet.winningOption)
-                        if userWon then
-                            statusText:SetText(COLOR_GREEN .. "✓ WON" .. COLOR_RESET)
-                        else
-                            statusText:SetText(COLOR_RED .. "✗ LOST" .. COLOR_RESET)
-                        end
-                    elseif userWasPending then
-                        statusText:SetText(COLOR_ORANGE .. "⏳ PENDING" .. COLOR_RESET)
-                    else
-                        -- Creator or spectator who didn't participate
-                        statusText:SetText(COLOR_GREEN .. "✓ RESOLVED" .. COLOR_RESET)
-                    end
-                else
-                    -- Cancelled
-                    if userWasPending then
-                        statusText:SetText(COLOR_ORANGE .. "⏳ PENDING" .. COLOR_RESET)
-                    elseif userParticipation then
-                        statusText:SetText(COLOR_RED .. "✗ CANCELLED" .. COLOR_RESET)
-                    else
-                        -- Creator or spectator
-                        statusText:SetText(COLOR_RED .. "✗ CANCELLED" .. COLOR_RESET)
-                    end
-                end
-            else
-                -- Hide button on the right for active bets
+                -- Hide/Unhide button
                 local hideButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
                 hideButton:SetSize(62, 20)
-                hideButton:SetPoint("BOTTOMRIGHT", betFrame, "BOTTOMRIGHT", -8, 8)
+                hideButton:SetPoint("TOPRIGHT", betFrame, "TOPRIGHT", -8, -8)
                 hideButton:SetText(isHidden and "Unhide" or "Hide")
                 hideButton:SetScript("OnClick", function()
                     if isHidden then
@@ -442,43 +334,30 @@ local function CreateMainFrame()
                     end
                     self:UpdateBetList()
                 end)
-            end
-            
-            -- Bet info
-            local creatorName = GetPlayerBaseName(bet.createdBy)
-            local info = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            info:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
-            info:SetWidth(500)
-            info:SetWordWrap(false)
-            
-            if isHistory then
-                -- Show final pot and winning option for history
-                if bet.status == "resolved" then
-                    info:SetText("By: " .. creatorName .. " • Winner: " .. COLOR_YELLOW .. bet.winningOption .. COLOR_RESET .. " • Final Pot: " .. bet.totalPot .. "g")
-                else
-                    info:SetText("By: " .. creatorName .. " • Cancelled • Pot: " .. bet.totalPot .. "g")
-                end
-            else
+                
+                -- Creator info
+                local creatorName = GetPlayerBaseName(bet.createdBy)
+                local info = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                info:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+                info:SetWidth(500)
+                info:SetWordWrap(false)
                 info:SetText("By: " .. creatorName .. " • Type: " .. bet.betType .. " • Pot: " .. bet.totalPot .. "g")
-            end
-            info:SetTextColor(0.7, 0.7, 0.7)
-            
-            if not isHistory then
-                -- Active bet buttons
-                -- Check if player has a pending bet on this
+                info:SetTextColor(0.7, 0.7, 0.7)
+                
+                -- Check for pending bet
                 local hasPending = FuldStonks.pendingBets[playerFullName] and FuldStonks.pendingBets[playerFullName].betId == betId
                 
                 if hasPending then
                     -- Show pending status
+                    local pendingBet = FuldStonks.pendingBets[playerFullName]
                     local pendingText = betFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                     pendingText:SetPoint("TOPLEFT", info, "BOTTOMLEFT", 0, -3)
                     pendingText:SetWidth(500)
                     pendingText:SetWordWrap(false)
-                    local pendingBet = FuldStonks.pendingBets[playerFullName]
-                    pendingText:SetText(COLOR_ORANGE .. "⏳ PENDING: " .. pendingBet.option .. " (" .. pendingBet.amount .. "g) - Awaiting trade" .. COLOR_RESET)
+                    pendingText:SetText(COLOR_ORANGE .. "⏳ PENDING: " .. pendingBet.option .. " (" .. pendingBet.amount .. "g)" .. COLOR_RESET)
                     pendingText:SetTextColor(1, 0.5, 0)
                     
-                    -- Add cancel button
+                    -- Cancel button
                     local cancelButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
                     cancelButton:SetSize(80, 22)
                     cancelButton:SetPoint("TOPLEFT", pendingText, "BOTTOMLEFT", 0, -5)
@@ -488,7 +367,7 @@ local function CreateMainFrame()
                         self:UpdateBetList()
                     end)
                     
-                    -- Add Inspect button even when we have a pending bet
+                    -- Inspect button
                     local inspectButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
                     inspectButton:SetSize(80, 22)
                     inspectButton:SetPoint("TOPLEFT", pendingText, "BOTTOMLEFT", 85, -5)
@@ -497,20 +376,20 @@ local function CreateMainFrame()
                         FuldStonks:ShowBetInspectDialog(betId)
                     end)
                 else
-                    -- Bet buttons for each option
+                    -- Place bet buttons for each option
                     local buttonOffset = 0
                     for _, option in ipairs(bet.options) do
                         local optionButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
-                        optionButton:SetSize(80, 22)
+                        optionButton:SetSize(75, 22)
                         optionButton:SetPoint("TOPLEFT", info, "BOTTOMLEFT", buttonOffset, -5)
                         optionButton:SetText(option)
                         optionButton:SetScript("OnClick", function()
                             FuldStonks:ShowPlaceBetDialog(betId, option)
                         end)
-                        buttonOffset = buttonOffset + 85
+                        buttonOffset = buttonOffset + 80
                     end
                     
-                    -- Add Inspect button for all bets (shows confirmed and pending bets)
+                    -- Inspect button
                     local inspectButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
                     inspectButton:SetSize(80, 22)
                     inspectButton:SetPoint("TOPLEFT", info, "BOTTOMLEFT", buttonOffset, -5)
@@ -519,22 +398,117 @@ local function CreateMainFrame()
                         FuldStonks:ShowBetInspectDialog(betId)
                     end)
                 end
-            else
-                -- History: Only show Inspect button (greyed out style)
-                local inspectButton = CreateFrame("Button", nil, betFrame, "UIPanelButtonTemplate")
-                inspectButton:SetSize(80, 22)
-                inspectButton:SetPoint("BOTTOMLEFT", betFrame, "BOTTOMLEFT", 10, 8)
-                inspectButton:SetText("Inspect")
-                inspectButton:SetScript("OnClick", function()
-                    FuldStonks:ShowBetInspectDialog(betId)
-                end)
+                
+                yOffset = yOffset + 118
+                betCount = betCount + 1
+            end
+        
+        -- STATS TAB
+        else
+            -- Calculate cumulative statistics
+            local playerStats = {}
+            
+            for betId, bet in pairs(FuldStonksDB.betHistory) do
+                if bet.status == "resolved" and bet.winningOption then
+                    for playerName, participation in pairs(bet.participants or {}) do
+                        if not playerStats[playerName] then
+                            playerStats[playerName] = {wins = 0, losses = 0, totalWon = 0, totalLost = 0}
+                        end
+                        
+                        if participation.option == bet.winningOption then
+                            playerStats[playerName].wins = playerStats[playerName].wins + 1
+                            playerStats[playerName].totalWon = playerStats[playerName].totalWon + (participation.amount or 0)
+                        else
+                            playerStats[playerName].losses = playerStats[playerName].losses + 1
+                            playerStats[playerName].totalLost = playerStats[playerName].totalLost + (participation.amount or 0)
+                        end
+                    end
+                end
             end
             
-            yOffset = yOffset + betFrameHeight + 8
-            betCount = betCount + 1
+            -- Separate and sort users
+            local winners = {}
+            local losers = {}
+            
+            for playerName, stats in pairs(playerStats) do
+                local net = stats.totalWon - stats.totalLost
+                if net > 0 then
+                    table.insert(winners, {name = playerName, stats = stats, net = net})
+                elseif net < 0 then
+                    table.insert(losers, {name = playerName, stats = stats, net = math.abs(net)})
+                else
+                    table.insert(winners, {name = playerName, stats = stats, net = 0})
+                end
+            end
+            
+            table.sort(winners, function(a, b) return a.net > b.net end)
+            table.sort(losers, function(a, b) return a.net > b.net end)
+            
+            -- Display side-by-side columns
+            local maxRows = math.max(#winners, #losers)
+            
+            for i = 1, maxRows do
+                -- Winner column (left)
+                if winners[i] then
+                    local winner = winners[i]
+                    local winFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
+                    winFrame:SetSize(230, 45)
+                    winFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 5, -yOffset)
+                    winFrame:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 8, insets = { left = 3, right = 3, top = 3, bottom = 3 }})
+                    winFrame:SetBackdropColor(0.05, 0.15, 0.05, 0.7)
+                    winFrame:SetBackdropBorderColor(0.2, 0.6, 0.2, 0.8)
+                    
+                    local name = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    name:SetPoint("TOPLEFT", winFrame, "TOPLEFT", 8, -5)
+                    name:SetText(GetPlayerBaseName(winner.name))
+                    name:SetTextColor(0.9, 0.9, 0.9)
+                    
+                    local gold = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    gold:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+                    gold:SetText(COLOR_GREEN .. "+" .. winner.net .. "g" .. COLOR_RESET)
+                    gold:SetTextColor(0.5, 1, 0.5)
+                    
+                    local record = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    record:SetPoint("TOPLEFT", gold, "BOTTOMLEFT", 0, -2)
+                    record:SetText(winner.stats.wins .. "W - " .. winner.stats.losses .. "L")
+                    record:SetTextColor(0.7, 0.7, 0.7)
+                    
+                    betCount = betCount + 1
+                end
+                
+                -- Loser column (right)
+                if losers[i] then
+                    local loser = losers[i]
+                    local loseFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
+                    loseFrame:SetSize(230, 45)
+                    loseFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 265, -yOffset)
+                    loseFrame:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 8, insets = { left = 3, right = 3, top = 3, bottom = 3 }})
+                    loseFrame:SetBackdropColor(0.15, 0.05, 0.05, 0.7)
+                    loseFrame:SetBackdropBorderColor(0.6, 0.2, 0.2, 0.8)
+                    
+                    local name = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    name:SetPoint("TOPLEFT", loseFrame, "TOPLEFT", 8, -5)
+                    name:SetText(GetPlayerBaseName(loser.name))
+                    name:SetTextColor(0.9, 0.9, 0.9)
+                    
+                    local gold = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    gold:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+                    gold:SetText(COLOR_RED .. "-" .. loser.net .. "g" .. COLOR_RESET)
+                    gold:SetTextColor(1, 0.5, 0.5)
+                    
+                    local record = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    record:SetPoint("TOPLEFT", gold, "BOTTOMLEFT", 0, -2)
+                    record:SetText(loser.stats.wins .. "W - " .. loser.stats.losses .. "L")
+                    record:SetTextColor(0.7, 0.7, 0.7)
+                    
+                    betCount = betCount + 1
+                end
+                
+                yOffset = yOffset + 50
+            end
         end
         
-        -- Show message if no bets
+        -- Show "no bets" message if empty
         if betCount == 0 then
             if not self.noBetsText then
                 self.noBetsText = self.betListContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -549,12 +523,12 @@ local function CreateMainFrame()
                     self.noBetsText:SetText("No active bets.\nUse " .. COLOR_YELLOW .. "/fs create" .. COLOR_RESET .. " to create one!")
                 end
             else
-                self.noBetsText:SetText("No bet history yet.\nResolved and cancelled bets will appear here.")
+                self.noBetsText:SetText("No statistics yet.\nWin some bets to see your stats!")
             end
             self.noBetsText:Show()
         end
         
-        self.betListContent:SetHeight(math.max(yOffset, 300))
+        self.betListContent:SetHeight(math.max(yOffset + 20, 300))
     end
     
     -- Create connected peers display
@@ -3117,7 +3091,6 @@ function FuldStonks:CancelUserBet(betId, targetName, pendingOnly)
     end
 end
 
--- Dev-only test data generator (local only, not synced)
 -- Master override to force delete any bet (protected by silly password)
 function FuldStonks:MasterDelete(betId, password)
     if password ~= "fuldmaster2025" then
