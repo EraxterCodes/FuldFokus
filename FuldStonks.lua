@@ -44,7 +44,7 @@ local SYNC_TYPE_PARTICIPANT = "PARTICIPANT"
 local SYNC_TYPE_HISTORY = "HISTORY"
 
 -- Addon state
-FuldStonks.version = "0.3.0"
+FuldStonks.version = "0.3.1"
 FuldStonks.frame = nil
 FuldStonks.peers = {}           -- Track connected peers: [fullName] = { lastSeen = time, stateVersion = 0, nonce = 0 }
 FuldStonks.lastBroadcast = 0    -- Rate limiting for broadcasts
