@@ -666,16 +666,24 @@ end
 
 -- Toggle main frame visibility
 function FuldStonks.ToggleMainFrame()
+    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " ToggleMainFrame() called")
+    
     -- Check if feature is enabled
     if not FULDSTONKS_ENABLED then
+        print(COLOR_RED .. "[FS DEBUG]" .. COLOR_RESET .. " Feature not enabled")
         ShowComingSoonDialog()
         return
     end
     
+    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Creating/accessing frame...")
     local frame = CreateMainFrame()
+    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Frame created: " .. tostring(frame))
+    
     if frame:IsShown() then
+        print(COLOR_YELLOW .. "[FS DEBUG]" .. COLOR_RESET .. " Hiding frame")
         frame:Hide()
     else
+        print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Showing frame")
         frame:Show()
     end
 end
@@ -1718,11 +1726,16 @@ local function SlashCommandHandler(msg)
     msg = msg or ""
     local command = strtrim(msg:lower())
     
+    print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Handler called with: '" .. command .. "'")
+    
     if command == "" then
         -- Default: toggle UI
+        print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Attempting to toggle frame...")
         local success, err = pcall(function() FuldStonks.ToggleMainFrame() end)
         if not success then
             print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Error: " .. tostring(err))
+        else
+            print(COLOR_GREEN .. "[FS DEBUG]" .. COLOR_RESET .. " Toggle successful!")
         end
     elseif command == "help" then
         print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Commands:")
@@ -2053,15 +2066,20 @@ end
 function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion, sender)
     local changesMade = false
     local conflicts = 0
-    local betCount = 0
-    local participantCount = 0
+    
+    -- Track changes for consolidated logging
+    local changes = {
+        newBets = {},
+        updatedBets = {},
+        closedBets = {},
+        potUpdates = {}
+    }
     
     -- Update our Lamport clock
     UpdateStateVersion(senderVersion)
     
     -- Process each received bet
     for betId, receivedBet in pairs(receivedBets) do
-        betCount = betCount + 1
         local localBet = FuldStonksDB.activeBets[betId]
         local historyBet = FuldStonksDB.betHistory[betId]
         
@@ -2080,7 +2098,7 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
             
             local creatorName = GetPlayerBaseName(receivedBet.createdBy)
             print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " " .. creatorName .. " created bet: " .. receivedBet.title)
-            DebugPrint("New bet: " .. creatorName .. " - " .. receivedBet.title, "MERGE")
+            table.insert(changes.newBets, receivedBet.title)
             
         elseif receivedBet.stateVersion > (localBet.stateVersion or 0) then
             -- Received bet is newer - update it
@@ -2095,7 +2113,7 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
             receivedBet.totalPot = oldTotalPot or 0
             
             changesMade = true
-            DebugPrint("Updated: " .. betId, "MERGE")
+            table.insert(changes.updatedBets, betId)
             
         elseif receivedBet.stateVersion == (localBet.stateVersion or 0) then
             -- Same version - use tie-breaker (creator name lexicographically)
@@ -2130,7 +2148,7 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
                 FuldStonksDB.betHistory[betId] = localBet
                 changesMade = true
                 print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Bet '" .. localBet.title .. "' was closed by creator")
-                DebugPrint("Closed: " .. localBet.title, "MERGE")
+                table.insert(changes.closedBets, localBet.title)
             end
             
             FuldStonksDB.activeBets[betId] = nil
@@ -2144,7 +2162,6 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
         local bet = FuldStonksDB.activeBets[betId]
         if bet then
             for playerName, participation in pairs(participants) do
-                participantCount = participantCount + 1
                 local localParticipation = bet.participants[playerName]
                 
                 if not localParticipation then
@@ -2177,6 +2194,7 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
                 
                 if not FuldStonksDB.ignoredBets[betId] then
                     print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Pot updated for '" .. bet.title .. "': " .. newTotal .. "g")
+                    table.insert(changes.potUpdates, bet.title)
                 end
             end
         end
@@ -2189,20 +2207,32 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
         if pendingBet and pendingBet.participants and pendingBet.participants[playerFullName] then
             self.pendingBets[playerFullName] = nil
             changesMade = true
-            DebugPrint("Cleared pending bet " .. myPending.betId, "MERGE")
         end
     end
     
-    -- Log summary if changes were made
-    if FuldStonksDB.debug == true and changesMade then
-        local summary = "State merged from " .. GetPlayerBaseName(sender) .. ": "
-        if conflicts > 0 then
-            summary = summary .. conflicts .. " conflict(s) resolved, "
+    -- Log consolidated summary only if changes were made
+    if changesMade then
+        local summary = "← Sync from " .. GetPlayerBaseName(sender) .. ": "
+        local parts = {}
+        
+        if #changes.newBets > 0 then
+            table.insert(parts, #changes.newBets .. " new")
         end
-        summary = summary .. betCount .. " bets, " .. participantCount .. " participants"
+        if #changes.updatedBets > 0 then
+            table.insert(parts, #changes.updatedBets .. " updated")
+        end
+        if conflicts > 0 then
+            table.insert(parts, conflicts .. " conflict(s)")
+        end
+        if #changes.closedBets > 0 then
+            table.insert(parts, #changes.closedBets .. " closed")
+        end
+        if #changes.potUpdates > 0 then
+            table.insert(parts, #changes.potUpdates .. " pot update(s)")
+        end
+        
+        summary = summary .. table.concat(parts, ", ")
         DebugPrint(summary, "SYNC")
-    elseif FuldStonksDB.debug == true then
-        DebugPrint("No changes from " .. GetPlayerBaseName(sender) .. " (v" .. senderVersion .. ")", "SYNC")
     end
     
     -- Update UI if changes were made
