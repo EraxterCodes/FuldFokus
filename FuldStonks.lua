@@ -1403,6 +1403,77 @@ function FuldStonks:ShowBetInspectDialog(betId)
             ownerDialog:Hide()
         end)
         
+        -- Password dialog for admin cancel
+        local passwordDialog = CreateFrame("Frame", "FuldStonksPasswordDialog", UIParent, "BasicFrameTemplateWithInset")
+        passwordDialog:SetSize(350, 150)
+        passwordDialog:SetPoint("CENTER")
+        passwordDialog:SetFrameStrata("DIALOG")
+        passwordDialog:SetMovable(true)
+        passwordDialog:EnableMouse(true)
+        passwordDialog:RegisterForDrag("LeftButton")
+        passwordDialog:SetScript("OnDragStart", passwordDialog.StartMoving)
+        passwordDialog:SetScript("OnDragStop", passwordDialog.StopMovingOrSizing)
+        passwordDialog:Hide()
+        
+        passwordDialog.title = passwordDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        passwordDialog.title:SetPoint("TOP", passwordDialog.TitleBg, "TOP", 0, -3)
+        passwordDialog.title:SetText("Admin Password Required")
+        
+        passwordDialog.label = passwordDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        passwordDialog.label:SetPoint("TOPLEFT", passwordDialog, "TOPLEFT", 20, -40)
+        passwordDialog.label:SetText("Enter admin password:")
+        
+        passwordDialog.input = CreateFrame("EditBox", nil, passwordDialog, "InputBoxTemplate")
+        passwordDialog.input:SetSize(200, 20)
+        passwordDialog.input:SetPoint("TOPLEFT", passwordDialog.label, "BOTTOMLEFT", 0, -8)
+        passwordDialog.input:SetAutoFocus(true)
+        passwordDialog.input:SetMaxLetters(32)
+        passwordDialog.input:SetPasswordMask("*")
+        
+        passwordDialog.confirmButton = CreateFrame("Button", nil, passwordDialog, "UIPanelButtonTemplate")
+        passwordDialog.confirmButton:SetSize(80, 24)
+        passwordDialog.confirmButton:SetPoint("BOTTOMLEFT", passwordDialog, "BOTTOMLEFT", 20, 12)
+        passwordDialog.confirmButton:SetText("Confirm")
+        passwordDialog.confirmButton:SetScript("OnClick", function()
+            local password = passwordDialog.input:GetText()
+            if password == "fuldmaster2025" then
+                FuldStonks:ForceDeleteBet(dialog.currentBetId)
+                passwordDialog:Hide()
+                dialog:Hide()
+            else
+                passwordDialog.input:SetText("")
+                print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Incorrect password!")
+            end
+        end)
+        
+        passwordDialog.cancelButton = CreateFrame("Button", nil, passwordDialog, "UIPanelButtonTemplate")
+        passwordDialog.cancelButton:SetSize(80, 24)
+        passwordDialog.cancelButton:SetPoint("BOTTOMRIGHT", passwordDialog, "BOTTOMRIGHT", -20, 12)
+        passwordDialog.cancelButton:SetText("Cancel")
+        passwordDialog.cancelButton:SetScript("OnClick", function()
+            passwordDialog.input:SetText("")
+            passwordDialog:Hide()
+        end)
+        
+        passwordDialog.CloseButton:SetScript("OnClick", function()
+            passwordDialog.input:SetText("")
+            passwordDialog:Hide()
+        end)
+        
+        dialog.passwordDialog = passwordDialog
+        
+        -- Admin cancel button (always available)
+        dialog.adminCancelButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+        dialog.adminCancelButton:SetSize(115, 25)
+        dialog.adminCancelButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -230, 12)
+        dialog.adminCancelButton:SetText("Admin cancel")
+        dialog.adminCancelButton:SetScript("OnClick", function()
+            if dialog.currentBetId then
+                dialog.passwordDialog.input:SetText("")
+                dialog.passwordDialog:Show()
+            end
+        end)
+        
         -- Close button
         dialog.closeButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
         dialog.closeButton:SetSize(100, 25)
@@ -3166,32 +3237,54 @@ function FuldStonks:CancelUserBet(betId, targetName, pendingOnly)
     end
 end
 
--- Master override to force delete any bet (protected by silly password)
-function FuldStonks:MasterDelete(betId, password)
-    if password ~= "fuldmaster2025" then
-        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Incorrect master password.")
+-- Master override to force delete any bet (no restrictions - for cleanup)
+function FuldStonks:ForceDeleteBet(betId)
+    if not betId or betId == "" then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Please specify a bet ID: /fs forcedelete <betid>")
         return
     end
 
     local bet = FuldStonksDB.activeBets[betId]
     if not bet then
-        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Bet not found.")
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Bet not found in active bets.")
         return
     end
 
     local betTitle = bet.title
     FuldStonksDB.activeBets[betId] = nil
     
+    -- Move to history if not already there
+    if not FuldStonksDB.betHistory[betId] then
+        bet.status = "forcedeleted"
+        bet.deletedAt = GetTime()
+        FuldStonksDB.betHistory[betId] = bet
+    end
+    
     -- Broadcast the deletion to all peers
     IncrementStateVersion()
     FuldStonks:BroadcastStateSync()
     
-    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Master deleted bet: " .. betTitle)
-    DebugPrint("Master deleted: " .. betId, "MASTER")
+    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Force deleted bet: " .. betTitle .. " (" .. betId .. ")")
+    DebugPrint("Force deleted: " .. betId, "CLEANUP")
     
     if self.frame and self.frame:IsShown() then
         self.frame:UpdateBetList()
     end
+    
+    if self.inspectDialog and self.inspectDialog:IsShown() then
+        self.inspectDialog:Hide()
+    end
+end
+
+-- Master override to force delete any bet (protected by silly password - legacy)
+function FuldStonks:MasterDelete(betId, password)
+    if password ~= "fuldmaster2025" then
+        print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Incorrect master password.")
+        return
+    end
+
+    -- Delegate to ForceDeleteBet
+    self:ForceDeleteBet(betId)
 end
 
 function FuldStonks:ShowHiddenBets()
