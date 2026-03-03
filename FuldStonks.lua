@@ -43,7 +43,7 @@ local SYNC_TYPE_BET = "BET"
 local SYNC_TYPE_PARTICIPANT = "PARTICIPANT"
 
 -- Addon state
-FuldStonks.version = "0.2.6"
+FuldStonks.version = "0.3.0"
 FuldStonks.frame = nil
 FuldStonks.peers = {}           -- Track connected peers: [fullName] = { lastSeen = time, stateVersion = 0, nonce = 0 }
 FuldStonks.lastBroadcast = 0    -- Rate limiting for broadcasts
@@ -1851,7 +1851,8 @@ end
 local DELIMITER = "\001"  -- ASCII SOH (Start of Heading) - safe delimiter
 
 local function SerializeMessage(msgType, ...)
-    local parts = {msgType}
+    -- Format: msgType|version|arg1|arg2|...
+    local parts = {msgType, FuldStonks.version}
     for i = 1, select("#", ...) do
         local v = select(i, ...)
         table.insert(parts, tostring(v))
@@ -1863,8 +1864,9 @@ end
 local function DeserializeMessage(message)
     local parts = {strsplit(DELIMITER, message)}
     local msgType = parts[1]
-    -- Use unpack starting from index 2 to avoid expensive table.remove
-    return msgType, unpack(parts, 2)
+    local senderVersion = parts[2]
+    -- Use unpack starting from index 3 to skip msgType and version
+    return msgType, senderVersion, unpack(parts, 3)
 end
 
 -- ============================================
@@ -2263,7 +2265,16 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         return
     end
     
-    local msgType, arg1, arg2, arg3, arg4, arg5 = DeserializeMessage(message)
+    local msgType, senderVersion, arg1, arg2, arg3, arg4, arg5 = DeserializeMessage(message)
+    
+    -- Version check: Only accept messages from same addon version
+    if senderVersion ~= FuldStonks.version then
+        if FuldStonksDB.debug == true then
+            DebugPrint("Ignoring message from " .. GetPlayerBaseName(sender) .. " (version " .. senderVersion .. ", expected " .. FuldStonks.version .. ")", "VERSION")
+        end
+        return
+    end
+    
     local now = GetTime()
     
     -- Only log message type if it's not a state sync chunk (those are too verbose)
@@ -2276,7 +2287,8 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         FuldStonks.peers[sender] = {
             lastSeen = now,
             stateVersion = 0,
-            nonce = 0
+            nonce = 0,
+            addonVersion = senderVersion
         }
         local baseName = GetPlayerBaseName(sender)
         --print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " " .. baseName .. " connected!")
