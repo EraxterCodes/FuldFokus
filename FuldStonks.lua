@@ -62,9 +62,18 @@ local playerName, playerRealm = UnitFullName("player")
 local playerFullName = (playerRealm and playerRealm ~= "" and (playerName .. "-" .. playerRealm)) or playerName
 
 -- Helper function for debug output
-local function DebugPrint(msg)
+local function DebugPrint(msg, category)
     if FuldStonksDB.debug == true then
-        print(COLOR_GREEN .. "FuldStonks [DEBUG]" .. COLOR_RESET .. " " .. tostring(msg))
+        local timestamp = date("%H:%M:%S")
+        category = category or "DEBUG"
+        print(COLOR_GREEN .. "FuldStonks [" .. category .. "]" .. COLOR_RESET .. " " .. timestamp .. " " .. tostring(msg))
+    end
+end
+
+-- Log only if something changed
+local function LogIfChanged(msg, changed, section)
+    if changed and FuldStonksDB.debug == true then
+        DebugPrint(msg, section or "CHANGE")
     end
 end
 
@@ -1865,7 +1874,6 @@ end
 -- Increment Lamport clock for state versioning
 local function IncrementStateVersion()
     FuldStonksDB.stateVersion = FuldStonksDB.stateVersion + 1
-    DebugPrint("State version incremented to: " .. FuldStonksDB.stateVersion)
     return FuldStonksDB.stateVersion
 end
 
@@ -1873,7 +1881,7 @@ end
 local function UpdateStateVersion(receivedVersion)
     local currentVersion = FuldStonksDB.stateVersion
     FuldStonksDB.stateVersion = math.max(currentVersion, receivedVersion) + 1
-    DebugPrint("State version updated to: " .. FuldStonksDB.stateVersion .. " (received: " .. receivedVersion .. ")")
+    LogIfChanged("v" .. FuldStonksDB.stateVersion, true, "STATE")
 end
 
 -- Serialize a single bet for transmission
@@ -2028,7 +2036,9 @@ function FuldStonks:BroadcastStateSync()
     local channel = GetBroadcastChannel()
     if #header <= 255 then
         C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, header, channel)
-        DebugPrint("Sent state sync header: v" .. snapshot.version .. " nonce:" .. snapshot.nonce .. " bets:" .. #sendableBets .. " participants:" .. #sendableParticipants)
+        if FuldStonksDB.debug == true and (#sendableBets > 0 or #sendableParticipants > 0) then
+            DebugPrint("↑ Broadcast: v" .. snapshot.version .. " (" .. #sendableBets .. " bets, " .. #sendableParticipants .. " participants)", "SYNC")
+        end
     end
 
     -- Send each bet
@@ -2050,21 +2060,21 @@ end
 function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion, sender)
     local changesMade = false
     local conflicts = 0
+    local betCount = 0
+    local participantCount = 0
     
     -- Update our Lamport clock
     UpdateStateVersion(senderVersion)
     
-    DebugPrint("Merging state from " .. sender .. " (v" .. senderVersion .. ")")
-    
     -- Process each received bet
     for betId, receivedBet in pairs(receivedBets) do
+        betCount = betCount + 1
         local localBet = FuldStonksDB.activeBets[betId]
         local historyBet = FuldStonksDB.betHistory[betId]
         
         -- Check if we have this bet in history (cancelled/resolved)
         if historyBet and (historyBet.stateVersion or 0) >= (receivedBet.stateVersion or 0) then
             -- We have a newer or equal version in history, ignore the received bet
-            DebugPrint("  Ignoring bet from sync (in history with equal/newer version): " .. betId)
             -- Don't add it back to active bets
             
         elseif not localBet then
@@ -2074,10 +2084,10 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
             receivedBet.totalPot = 0
             FuldStonksDB.activeBets[betId] = receivedBet
             changesMade = true
-            DebugPrint("  Added new bet: " .. betId)
             
             local creatorName = GetPlayerBaseName(receivedBet.createdBy)
             print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " " .. creatorName .. " created bet: " .. receivedBet.title)
+            DebugPrint("New bet: " .. creatorName .. " - " .. receivedBet.title, "MERGE")
             
         elseif receivedBet.stateVersion > (localBet.stateVersion or 0) then
             -- Received bet is newer - update it
@@ -2092,7 +2102,7 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
             receivedBet.totalPot = oldTotalPot or 0
             
             changesMade = true
-            DebugPrint("  Updated bet metadata: " .. betId .. " (v" .. receivedBet.stateVersion .. " > v" .. (localBet.stateVersion or 0) .. ")")
+            DebugPrint("Updated: " .. betId, "MERGE")
             
         elseif receivedBet.stateVersion == (localBet.stateVersion or 0) then
             -- Same version - use tie-breaker (creator name lexicographically)
@@ -2107,7 +2117,6 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
                 
                 conflicts = conflicts + 1
                 changesMade = true
-                DebugPrint("  Conflict resolved for bet: " .. betId .. " (chose " .. receivedBet.createdBy .. "'s version)")
             end
         end
         -- else: local bet is newer, keep it
@@ -2119,7 +2128,6 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
         if localBet.createdBy == sender and not receivedBets[betId] then
             -- The creator of this bet sent a sync without including it
             -- This means they've cancelled or resolved it
-            DebugPrint("  Removing bet " .. betId .. " (creator " .. sender .. " no longer has it active)")
             
             -- Move to history as "externally cancelled" if not already there
             if not FuldStonksDB.betHistory[betId] then
@@ -2127,13 +2135,12 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
                 localBet.cancelledAt = GetTime()
                 localBet.stateVersion = senderVersion
                 FuldStonksDB.betHistory[betId] = localBet
+                changesMade = true
+                print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Bet '" .. localBet.title .. "' was closed by creator")
+                DebugPrint("Closed: " .. localBet.title, "MERGE")
             end
             
             FuldStonksDB.activeBets[betId] = nil
-            changesMade = true
-            
-            print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Bet '" .. localBet.title .. "' was closed by creator")
-            DebugPrint("Moved bet to history: " .. betId .. " status=" .. localBet.status)
         end
     end
     
@@ -2144,6 +2151,7 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
         local bet = FuldStonksDB.activeBets[betId]
         if bet then
             for playerName, participation in pairs(participants) do
+                participantCount = participantCount + 1
                 local localParticipation = bet.participants[playerName]
                 
                 if not localParticipation then
@@ -2152,17 +2160,11 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
                     potsToRecalculate[betId] = true
                     changesMade = true
                     
-                    local baseName = GetPlayerBaseName(playerName)
-                    if not FuldStonksDB.ignoredBets[betId] then
-                        DebugPrint("  New participant: " .. baseName .. " in bet " .. betId)
-                    end
-                    
                 elseif (participation.timestamp or 0) > (localParticipation.timestamp or 0) then
                     -- Received participant data is newer
                     bet.participants[playerName] = participation
                     potsToRecalculate[betId] = true
                     changesMade = true
-                    DebugPrint("  Updated participant: " .. playerName .. " in bet " .. betId)
                 end
             end
         end
@@ -2178,7 +2180,6 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
             end
             
             if newTotal ~= bet.totalPot then
-                DebugPrint("  Recalculated pot for " .. betId .. ": " .. bet.totalPot .. "g -> " .. newTotal .. "g")
                 bet.totalPot = newTotal
                 
                 if not FuldStonksDB.ignoredBets[betId] then
@@ -2195,12 +2196,20 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
         if pendingBet and pendingBet.participants and pendingBet.participants[playerFullName] then
             self.pendingBets[playerFullName] = nil
             changesMade = true
-            DebugPrint("Cleared local pending bet after sync confirmation: " .. myPending.betId)
+            DebugPrint("Cleared pending bet " .. myPending.betId, "MERGE")
         end
     end
     
-    if conflicts > 0 then
-        DebugPrint("Resolved " .. conflicts .. " conflicts during merge")
+    -- Log summary if changes were made
+    if FuldStonksDB.debug == true and changesMade then
+        local summary = "State merged from " .. GetPlayerBaseName(sender) .. ": "
+        if conflicts > 0 then
+            summary = summary .. conflicts .. " conflict(s) resolved, "
+        end
+        summary = summary .. betCount .. " bets, " .. participantCount .. " participants"
+        DebugPrint(summary, "SYNC")
+    elseif FuldStonksDB.debug == true then
+        DebugPrint("No changes from " .. GetPlayerBaseName(sender) .. " (v" .. senderVersion .. ")", "SYNC")
     end
     
     -- Update UI if changes were made
@@ -2226,7 +2235,7 @@ function FuldStonks:BroadcastMessage(msgType, ...)
     end
     
     C_ChatInfo.SendAddonMessage(MESSAGE_PREFIX, message, channel)
-    DebugPrint("Sent " .. msgType .. " to " .. channel)
+    DebugPrint("→ " .. msgType, "MSG")
     return true
 end
 
@@ -2234,14 +2243,13 @@ end
 local function InitializeAddonComms()
     -- Register addon message prefix
     C_ChatInfo.RegisterAddonMessagePrefix(MESSAGE_PREFIX)
-    DebugPrint("Addon message prefix registered: " .. MESSAGE_PREFIX)
 end
 
 -- Request full sync from other players (on-demand)
 function FuldStonks:RequestSync()
     self:BroadcastMessage(MSG_SYNC_REQUEST)
     self.syncRequested = true
-    DebugPrint("Sync requested from peers")
+    DebugPrint("Syncing...", "SYNC")
 end
 
 -- Handle received addon messages
@@ -2258,7 +2266,10 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
     local msgType, arg1, arg2, arg3, arg4, arg5 = DeserializeMessage(message)
     local now = GetTime()
     
-    DebugPrint("Received " .. msgType .. " from " .. sender .. " [" .. channel .. "]")
+    -- Only log message type if it's not a state sync chunk (those are too verbose)
+    if msgType ~= MSG_STATE_SYNC or arg1 == SYNC_TYPE_HEADER then
+        DebugPrint("Received " .. msgType .. " from " .. GetPlayerBaseName(sender), "MSG")
+    end
     
     -- Update peer tracking
     if not FuldStonks.peers[sender] then
@@ -2300,7 +2311,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                 timestamp = now
             }
             
-            DebugPrint("State sync started from " .. sender .. ": v" .. version .. " nonce:" .. nonce .. " expecting " .. betCount .. " bets, " .. participantCount .. " participants")
+            DebugPrint("← Sync from " .. GetPlayerBaseName(sender) .. ": v" .. version .. " nonce:" .. nonce .. " (" .. betCount .. " bets, " .. participantCount .. " participants)", "SYNC")
 
             -- Handle empty snapshots immediately (no BET/PARTICIPANT chunks will follow).
             if betCount == 0 and participantCount == 0 then
@@ -2318,7 +2329,6 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                 local bet = DeserializeBetFromSync(betData)
                 if bet then
                     FuldStonks.pendingStateUpdates[sender][nonce].receivedBets[betId] = bet
-                    DebugPrint("  Received bet " .. index .. "/" .. FuldStonks.pendingStateUpdates[sender][nonce].expectedBets .. ": " .. betId)
                     
                     -- Check if we've received all expected data
                     FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
@@ -2339,7 +2349,6 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
                         FuldStonks.pendingStateUpdates[sender][nonce].receivedParticipants[betId] = {}
                     end
                     FuldStonks.pendingStateUpdates[sender][nonce].receivedParticipants[betId][playerName] = participation
-                    DebugPrint("  Received participant " .. index .. "/" .. FuldStonks.pendingStateUpdates[sender][nonce].expectedParticipants .. " for bet " .. betId)
                     
                     -- Check if we've received all expected data
                     FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
@@ -2348,7 +2357,7 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         end
         
     elseif msgType == MSG_SYNC_REQUEST then
-        DebugPrint(sender .. " requested sync")
+        DebugPrint(GetPlayerBaseName(sender) .. " requested sync", "SYNC")
         -- Send our current state immediately
         FuldStonks:BroadcastStateSync()
         
@@ -2359,13 +2368,11 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         local option = arg2
         local amount = tonumber(arg3) or 0
         
-        DebugPrint("Received pending bet notification from " .. sender .. ": " .. betId .. " | " .. option .. " | " .. amount .. "g")
-        
         local bet = FuldStonksDB.activeBets[betId]
         if bet and bet.createdBy == playerFullName then
             local existingConfirmed = bet.participants[sender]
             if existingConfirmed and existingConfirmed.option ~= option then
-                DebugPrint("Rejected pending bet from " .. sender .. " due to opposite-side confirmed vote")
+                DebugPrint("Rejected pending bet from " .. GetPlayerBaseName(sender) .. " (conflicts with existing vote)", "BET")
                 FuldStonks:BroadcastMessage(MSG_BET_PENDING_REJECT, betId, sender)
                 return
             end
@@ -2383,29 +2390,25 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             print("  Bet: " .. bet.title)
             print("  " .. COLOR_YELLOW .. "Accept their trade to confirm the bet" .. COLOR_RESET)
             
-            DebugPrint("Stored pending bet for " .. sender)
+            DebugPrint("Pending bet: " .. baseName .. " → " .. amount .. "g on " .. option, "BET")
             
             -- Update UI immediately to show pending bet
             if FuldStonks.frame and FuldStonks.frame:IsShown() then
                 FuldStonks.frame:UpdateBetList()
             end
             RefreshOpenInspectDialog()
-        else
-            DebugPrint("Bet not found or I'm not the creator, ignoring pending bet notification")
         end
         
     elseif msgType == MSG_BET_PENDING_CANCEL then
         -- Handle pending bet cancellation (received by bet creator)
         local betId = arg1
         
-        DebugPrint("Received pending bet cancellation from " .. sender .. " for bet: " .. tostring(betId))
-        
         -- Remove the pending bet for this sender if it matches
         if FuldStonks.pendingBets[sender] and FuldStonks.pendingBets[sender].betId == betId then
             local baseName = GetPlayerBaseName(sender)
             print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " " .. baseName .. " cancelled their pending bet")
             FuldStonks.pendingBets[sender] = nil
-            DebugPrint("Removed pending bet for " .. sender)
+            DebugPrint("Cancelled: " .. baseName, "BET")
             
             -- Update UI immediately
             if FuldStonks.frame and FuldStonks.frame:IsShown() then
@@ -2509,8 +2512,6 @@ function FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
     
     -- Check if we have all the data
     if receivedBetCount >= update.expectedBets and receivedParticipantCount >= update.expectedParticipants then
-        DebugPrint("Complete state received from " .. sender .. " (nonce:" .. nonce .. "), applying...")
-        
         -- Apply the state update
         self:MergeState(update.receivedBets, update.receivedParticipants, update.version, sender)
         
@@ -2522,7 +2523,6 @@ function FuldStonks:CheckAndApplyStateUpdate(sender, nonce)
         for peerName, nonces in pairs(self.pendingStateUpdates) do
             for n, upd in pairs(nonces) do
                 if now - upd.timestamp > STATE_CLEANUP_TIMEOUT then
-                    DebugPrint("Cleaned up stale state update from " .. peerName .. " nonce:" .. n)
                     self.pendingStateUpdates[peerName][n] = nil
                 end
             end
@@ -2557,76 +2557,50 @@ local function OnTradeShow()
     FuldStonks.currentTrade.betInfo = nil
     FuldStonks.currentTrade.goldBefore = math.floor(GetMoney() / 10000)  -- Store current gold
     
-    DebugPrint("Trade window opened with: " .. tradeFullName)
-    DebugPrint("Current gold: " .. FuldStonks.currentTrade.goldBefore .. "g")
+    DebugPrint("Trade opened with " .. GetPlayerBaseName(tradeFullName), "TRADE")
     
     -- SCENARIO 1: Check if YOU have a pending bet and are trading TO the bet creator
-    DebugPrint("Checking if I have a pending bet to trade with: " .. tradeFullName)
     local myPendingBet = FuldStonks.pendingBets[playerFullName]
     if myPendingBet then
-        DebugPrint("  I have a pending bet for betId: " .. myPendingBet.betId)
         local bet = FuldStonksDB.activeBets[myPendingBet.betId]
         if bet then
-            DebugPrint("  Bet found. Creator: " .. bet.createdBy)
             local betCreatorBaseName = GetPlayerBaseName(bet.createdBy)
             local tradeBaseName = GetPlayerBaseName(tradeFullName)
             
             -- Check if the person we're trading with is the bet creator
             if bet.createdBy == tradeFullName or betCreatorBaseName == tradeBaseName then
-                DebugPrint("  Trading with bet creator! Setting up trade confirmation.")
                 FuldStonks.currentTrade.betInfo = myPendingBet
                 FuldStonks.currentTrade.traderName = playerFullName  -- I am the trader
                 print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Trading gold for your bet:")
                 print("  Bet: " .. bet.title)
                 print("  Amount: " .. myPendingBet.amount .. "g")
                 print("  Option: " .. myPendingBet.option)
+                DebugPrint("→ Sending gold for bet: " .. bet.title, "TRADE")
                 return
-            else
-                DebugPrint("  Creator doesn't match trader: '" .. bet.createdBy .. "' vs '" .. tradeFullName .. "'")
             end
-        else
-            DebugPrint("  Bet not found in activeBets")
         end
-    else
-        DebugPrint("  I don't have a pending bet")
     end
     
     -- SCENARIO 2: Check if someone is trading TO YOU for a bet you created
-    DebugPrint("Checking if trader has pending bet with me (bet creator)")
     local foundMatch = false
     for playerName, pendingBet in pairs(FuldStonks.pendingBets) do
-        DebugPrint("  Pending bet from: " .. playerName .. " for betId: " .. pendingBet.betId)
         local playerBaseName = GetPlayerBaseName(playerName)
         local tradeBaseName = GetPlayerBaseName(tradeFullName)
         
         -- Match by full name OR base name (for same-realm players)
         if playerName == tradeFullName or playerBaseName == tradeBaseName then
-            DebugPrint("    Name matches! Checking bet...")
             local bet = FuldStonksDB.activeBets[pendingBet.betId]
-            if bet then
-                DebugPrint("    Bet found. Creator: " .. bet.createdBy .. ", Me: " .. playerFullName)
-                -- Only accept trades if we are the bet creator
-                if bet.createdBy == playerFullName then
-                    FuldStonks.currentTrade.betInfo = pendingBet
-                    FuldStonks.currentTrade.traderName = playerName  -- Store the actual key used in pendingBets
-                    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Receiving gold for bet:")
-                    print("  Bet: " .. bet.title)
-                    print("  Expected: " .. pendingBet.amount .. "g")
-                    DebugPrint("Trade opened with " .. tradeBaseName .. " who has pending bet for " .. pendingBet.amount .. "g")
-                    foundMatch = true
-                    break
-                else
-                    DebugPrint("    Not the bet creator, skipping")
-                end
-            else
-                DebugPrint("    Bet not found in activeBets")
+            if bet and bet.createdBy == playerFullName then
+                FuldStonks.currentTrade.betInfo = pendingBet
+                FuldStonks.currentTrade.traderName = playerName  -- Store the actual key used in pendingBets
+                print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Receiving gold for bet:")
+                print("  Bet: " .. bet.title)
+                print("  Expected: " .. pendingBet.amount .. "g")
+                DebugPrint("← Receiving " .. pendingBet.amount .. "g for: " .. bet.title, "TRADE")
+                foundMatch = true
+                break
             end
-        else
-            DebugPrint("    Name doesn't match: '" .. playerName .. "' vs '" .. tradeFullName .. "' (base: '" .. playerBaseName .. "' vs '" .. tradeBaseName .. "')")
         end
-    end
-    if not foundMatch then
-        DebugPrint("No matching pending bet found for this trade")
     end
 end
 
@@ -2637,8 +2611,6 @@ local function OnTradeMoneyChanged()
     -- Track the amount being received (convert copper to gold)
     FuldStonks.currentTrade.amount = math.floor(targetGold / 10000)
     
-    DebugPrint("Trade money changed: receiving " .. FuldStonks.currentTrade.amount .. "g")
-    
     if FuldStonks.currentTrade.betInfo then
         local bet = FuldStonksDB.activeBets[FuldStonks.currentTrade.betInfo.betId]
         if bet and bet.createdBy == playerFullName then
@@ -2646,6 +2618,7 @@ local function OnTradeMoneyChanged()
             if FuldStonks.currentTrade.amount == expected then
                 local traderName = GetPlayerBaseName(FuldStonks.currentTrade.player)
                 print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " " .. traderName .. " is trading the correct amount: " .. expected .. "g")
+                DebugPrint("Gold matches expected amount", "TRADE")
             elseif FuldStonks.currentTrade.amount > 0 then
                 print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Warning: Expected " .. expected .. "g but receiving " .. FuldStonks.currentTrade.amount .. "g")
             end
@@ -2655,16 +2628,13 @@ end
 
 -- Handle trade accept button updates
 local function OnTradeAcceptUpdate(player, target)
-    DebugPrint("Trade accept update: player=" .. player .. ", target=" .. target)
-    if player == 1 and target == 1 then
-        DebugPrint("Both players have accepted the trade")
+    if FuldStonksDB.debug == true and player == 1 and target == 1 then
+        DebugPrint("Both players accepted", "TRADE")
     end
 end
 
 -- Handle trade window closing (check if money increased)
 local function OnTradeClosed()
-    DebugPrint("Trade window closed")
-    
     if FuldStonks.currentTrade.betInfo and FuldStonks.currentTrade.amount > 0 then
         -- Store trade info locally before clearing (C_Timer callback needs it)
         local tradeInfo = {
@@ -2679,11 +2649,8 @@ local function OnTradeClosed()
             local currentGold = math.floor(GetMoney() / 10000)
             local goldIncrease = currentGold - tradeInfo.goldBefore
             
-            DebugPrint("Gold before trade: " .. tradeInfo.goldBefore .. "g, after: " .. currentGold .. "g, increase: " .. goldIncrease .. "g")
-            
             local pendingBet = tradeInfo.betInfo
             if not pendingBet then
-                DebugPrint("No pending bet info available")
                 return
             end
             
@@ -2691,7 +2658,6 @@ local function OnTradeClosed()
             local bet = FuldStonksDB.activeBets[pendingBet.betId]
             
             if not bet then
-                DebugPrint("Bet not found, cannot process trade")
                 return
             end
             
@@ -2699,7 +2665,7 @@ local function OnTradeClosed()
             if bet.createdBy == playerFullName then
                 if goldIncrease == pendingBet.amount then
                     print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Trade completed successfully! Confirming bet...")
-                    DebugPrint("Received " .. goldIncrease .. "g, matches expected " .. pendingBet.amount .. "g")
+                    DebugPrint("Gold: " .. tradeInfo.goldBefore .. "g → " .. currentGold .. "g (+=" .. goldIncrease .. "g)", "TRADE")
                     
                     -- Confirm the bet
                     FuldStonks:ConfirmBetTrade(traderName, pendingBet.betId, pendingBet.option, pendingBet.amount)
@@ -2707,11 +2673,9 @@ local function OnTradeClosed()
                     -- Remove from pending
                     FuldStonks.pendingBets[traderName] = nil
                     
-                    DebugPrint("Removed pending bet for " .. traderName)
                 elseif goldIncrease > 0 then
                     print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Trade amount mismatch! Expected " .. pendingBet.amount .. "g but received " .. goldIncrease .. "g")
-                else
-                    DebugPrint("Trade was cancelled or failed - no gold received")
+                    DebugPrint("Mismatch: expected " .. pendingBet.amount .. "g, got " .. goldIncrease .. "g", "TRADE")
                 end
             -- CASE 2: We are a participant who just traded gold to the creator
             else
@@ -2719,9 +2683,7 @@ local function OnTradeClosed()
                 -- Clear our pending bet immediately for better UX
                 if FuldStonks.pendingBets[playerFullName] and FuldStonks.pendingBets[playerFullName].betId == pendingBet.betId then
                     print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Trade completed! Waiting for creator to confirm...")
-                    -- Keep the pending bet in our tracking but mark it as traded
-                    -- It will be cleared when we receive confirmation from the creator
-                    DebugPrint("Trade sent for pending bet: " .. pendingBet.betId)
+                    DebugPrint("Sent " .. pendingBet.amount .. "g, awaiting confirmation", "TRADE")
                     
                     -- Update UI to show that confirmation is pending
                     if FuldStonks.frame and FuldStonks.frame:IsShown() then
