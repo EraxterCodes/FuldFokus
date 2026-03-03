@@ -1715,11 +1715,15 @@ end
 
 -- Slash command handler
 local function SlashCommandHandler(msg)
+    msg = msg or ""
     local command = strtrim(msg:lower())
     
     if command == "" then
         -- Default: toggle UI
-        FuldStonks.ToggleMainFrame()
+        local success, err = pcall(function() FuldStonks.ToggleMainFrame() end)
+        if not success then
+            print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Error: " .. tostring(err))
+        end
     elseif command == "help" then
         print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Commands:")
         print("  /FuldStonks or /fs - Toggle main UI")
@@ -1793,8 +1797,11 @@ local function SlashCommandHandler(msg)
             print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Usage: /fs delete <betId> <password>")
         end
     else
-        -- Default: toggle UI
-        FuldStonks.ToggleMainFrame()
+        -- Default: toggle UI (shouldn't normally reach here if command is empty)
+        local success, err = pcall(function() FuldStonks.ToggleMainFrame() end)
+        if not success then
+            print(COLOR_RED .. "FuldStonks" .. COLOR_RESET .. " Error: " .. tostring(err))
+        end
     end
 end
 
