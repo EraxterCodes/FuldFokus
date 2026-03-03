@@ -44,7 +44,7 @@ local SYNC_TYPE_PARTICIPANT = "PARTICIPANT"
 local SYNC_TYPE_HISTORY = "HISTORY"
 
 -- Addon state
-FuldStonks.version = "0.3.1"
+FuldStonks.version = "0.3.2"
 FuldStonks.frame = nil
 FuldStonks.peers = {}           -- Track connected peers: [fullName] = { lastSeen = time, stateVersion = 0, nonce = 0 }
 FuldStonks.lastBroadcast = 0    -- Rate limiting for broadcasts
@@ -2308,9 +2308,18 @@ function FuldStonks:MergeState(receivedBets, receivedParticipants, senderVersion
     local myPending = self.pendingBets[playerFullName]
     if myPending then
         local pendingBet = FuldStonksDB.activeBets[myPending.betId]
-        if pendingBet and pendingBet.participants and pendingBet.participants[playerFullName] then
-            self.pendingBets[playerFullName] = nil
-            changesMade = true
+        if pendingBet and pendingBet.participants then
+            -- Check if we're in the participants list (with flexible name matching)
+            local myBaseName = GetPlayerBaseName(playerFullName)
+            for participantName, _ in pairs(pendingBet.participants) do
+                local participantBase = GetPlayerBaseName(participantName)
+                if participantName == playerFullName or participantBase == myBaseName then
+                    self.pendingBets[playerFullName] = nil
+                    DebugPrint("Cleared pending bet via state sync for " .. playerFullName, "SYNC")
+                    changesMade = true
+                    break
+                end
+            end
         end
     end
     
@@ -2643,9 +2652,11 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
             if myPending and myPending.betId == betId then
                 local confirmedBase = GetPlayerBaseName(confirmedPlayer)
                 local myBase = GetPlayerBaseName(playerFullName)
+                DebugPrint("Checking if should clear pending: confirmedPlayer=" .. tostring(confirmedPlayer) .. ", playerFullName=" .. tostring(playerFullName) .. ", confirmedBase=" .. tostring(confirmedBase) .. ", myBase=" .. tostring(myBase), "BET")
                 if confirmedPlayer == playerFullName or confirmedBase == myBase then
                     FuldStonks.pendingBets[playerFullName] = nil
-                    DebugPrint("Cleared pending bet for " .. playerFullName .. " due to confirmation")
+                    DebugPrint("Cleared pending bet for " .. playerFullName .. " due to confirmation", "BET")
+                    print(COLOR_GREEN .. "FuldStonks" .. COLOR_RESET .. " Your bet has been confirmed by the creator!")
                 end
             end
 
