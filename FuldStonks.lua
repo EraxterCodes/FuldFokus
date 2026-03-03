@@ -9,6 +9,7 @@
 -- Set to true to enable full functionality for testing
 -- ============================================
 local FULDSTONKS_ENABLED = true
+local STATS_TAB_ENABLED = false
 
 -- Create addon namespace
 local ADDON_NAME = "FuldFokus"
@@ -44,7 +45,7 @@ local SYNC_TYPE_PARTICIPANT = "PARTICIPANT"
 local SYNC_TYPE_HISTORY = "HISTORY"
 
 -- Addon state
-FuldStonks.version = "0.3.2"
+FuldStonks.version = "1.0.0"
 FuldStonks.frame = nil
 FuldStonks.peers = {}           -- Track connected peers: [fullName] = { lastSeen = time, stateVersion = 0, nonce = 0 }
 FuldStonks.lastBroadcast = 0    -- Rate limiting for broadcasts
@@ -281,11 +282,18 @@ local function CreateMainFrame()
             self.showHiddenCheck:Show()
             self.showHiddenLabel:Show()
             self.statsHeadersFrame:Hide()
+            if self.statsComingSoonText then
+                self.statsComingSoonText:Hide()
+            end
         else -- stats
             self.tabTitle:SetText("Statistics:")
             self.showHiddenCheck:Hide()
             self.showHiddenLabel:Hide()
-            self.statsHeadersFrame:Show()
+            if STATS_TAB_ENABLED then
+                self.statsHeadersFrame:Show()
+            else
+                self.statsHeadersFrame:Hide()
+            end
         end
         
         local yOffset = 0
@@ -421,109 +429,124 @@ local function CreateMainFrame()
         
         -- STATS TAB
         else
-            -- Offset for headers
-            yOffset = 30
-            
-            -- Calculate cumulative statistics
-            local playerStats = {}
-            
-            for betId, bet in pairs(FuldStonksDB.betHistory) do
-                if bet.status == "resolved" and bet.winningOption then
-                    for playerName, participation in pairs(bet.participants or {}) do
-                        if not playerStats[playerName] then
-                            playerStats[playerName] = {wins = 0, losses = 0, totalWon = 0, totalLost = 0}
-                        end
-                        
-                        if participation.option == bet.winningOption then
-                            playerStats[playerName].wins = playerStats[playerName].wins + 1
-                            playerStats[playerName].totalWon = playerStats[playerName].totalWon + (participation.amount or 0)
-                        else
-                            playerStats[playerName].losses = playerStats[playerName].losses + 1
-                            playerStats[playerName].totalLost = playerStats[playerName].totalLost + (participation.amount or 0)
+            if not STATS_TAB_ENABLED then
+                if not self.statsComingSoonText then
+                    self.statsComingSoonText = self.betListContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                    self.statsComingSoonText:SetPoint("TOP", self.betListContent, "TOP", 0, -60)
+                    self.statsComingSoonText:SetWidth(500)
+                    self.statsComingSoonText:SetJustifyH("CENTER")
+                end
+
+                self.statsComingSoonText:SetText(COLOR_YELLOW .. "Coming soon TM" .. COLOR_RESET .. "\n\n" .. COLOR_GRAY .. "Hvis jeg nogensinde gider" .. COLOR_RESET)
+                self.statsComingSoonText:Show()
+
+                yOffset = 160
+                betCount = 1
+            else
+                -- Offset for headers
+                yOffset = 30
+                
+                -- Calculate cumulative statistics
+                local playerStats = {}
+                
+                for betId, bet in pairs(FuldStonksDB.betHistory) do
+                    if bet.status == "resolved" and bet.winningOption then
+                        for playerName, participation in pairs(bet.participants or {}) do
+                            if not playerStats[playerName] then
+                                playerStats[playerName] = {wins = 0, losses = 0, totalWon = 0, totalLost = 0}
+                            end
+                            
+                            if participation.option == bet.winningOption then
+                                playerStats[playerName].wins = playerStats[playerName].wins + 1
+                                playerStats[playerName].totalWon = playerStats[playerName].totalWon + (participation.amount or 0)
+                            else
+                                playerStats[playerName].losses = playerStats[playerName].losses + 1
+                                playerStats[playerName].totalLost = playerStats[playerName].totalLost + (participation.amount or 0)
+                            end
                         end
                     end
                 end
-            end
-            
-            -- Separate and sort users
-            local winners = {}
-            local losers = {}
-            
-            for playerName, stats in pairs(playerStats) do
-                local net = stats.totalWon - stats.totalLost
-                if net > 0 then
-                    table.insert(winners, {name = playerName, stats = stats, net = net})
-                elseif net < 0 then
-                    table.insert(losers, {name = playerName, stats = stats, net = math.abs(net)})
-                else
-                    table.insert(winners, {name = playerName, stats = stats, net = 0})
-                end
-            end
-            
-            table.sort(winners, function(a, b) return a.net > b.net end)
-            table.sort(losers, function(a, b) return a.net > b.net end)
-            
-            -- Display side-by-side columns
-            local maxRows = math.max(#winners, #losers)
-            
-            for i = 1, maxRows do
-                -- Winner column (left)
-                if winners[i] then
-                    local winner = winners[i]
-                    local winFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
-                    winFrame:SetSize(230, 45)
-                    winFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 5, -yOffset)
-                    winFrame:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 8, insets = { left = 3, right = 3, top = 3, bottom = 3 }})
-                    winFrame:SetBackdropColor(0.05, 0.15, 0.05, 0.7)
-                    winFrame:SetBackdropBorderColor(0.2, 0.6, 0.2, 0.8)
-                    
-                    local name = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    name:SetPoint("TOPLEFT", winFrame, "TOPLEFT", 8, -5)
-                    name:SetText(GetPlayerBaseName(winner.name))
-                    name:SetTextColor(0.9, 0.9, 0.9)
-                    
-                    local gold = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    gold:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
-                    gold:SetText(COLOR_GREEN .. "+" .. winner.net .. "g" .. COLOR_RESET)
-                    gold:SetTextColor(0.5, 1, 0.5)
-                    
-                    local record = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    record:SetPoint("TOPLEFT", gold, "BOTTOMLEFT", 0, -2)
-                    record:SetText(winner.stats.wins .. "W - " .. winner.stats.losses .. "L")
-                    record:SetTextColor(0.7, 0.7, 0.7)
-                    
-                    betCount = betCount + 1
+                
+                -- Separate and sort users
+                local winners = {}
+                local losers = {}
+                
+                for playerName, stats in pairs(playerStats) do
+                    local net = stats.totalWon - stats.totalLost
+                    if net > 0 then
+                        table.insert(winners, {name = playerName, stats = stats, net = net})
+                    elseif net < 0 then
+                        table.insert(losers, {name = playerName, stats = stats, net = math.abs(net)})
+                    else
+                        table.insert(winners, {name = playerName, stats = stats, net = 0})
+                    end
                 end
                 
-                -- Loser column (right)
-                if losers[i] then
-                    local loser = losers[i]
-                    local loseFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
-                    loseFrame:SetSize(230, 45)
-                    loseFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 265, -yOffset)
-                    loseFrame:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 8, insets = { left = 3, right = 3, top = 3, bottom = 3 }})
-                    loseFrame:SetBackdropColor(0.15, 0.05, 0.05, 0.7)
-                    loseFrame:SetBackdropBorderColor(0.6, 0.2, 0.2, 0.8)
-                    
-                    local name = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    name:SetPoint("TOPLEFT", loseFrame, "TOPLEFT", 8, -5)
-                    name:SetText(GetPlayerBaseName(loser.name))
-                    name:SetTextColor(0.9, 0.9, 0.9)
-                    
-                    local gold = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    gold:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
-                    gold:SetText(COLOR_RED .. "-" .. loser.net .. "g" .. COLOR_RESET)
-                    gold:SetTextColor(1, 0.5, 0.5)
-                    
-                    local record = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    record:SetPoint("TOPLEFT", gold, "BOTTOMLEFT", 0, -2)
-                    record:SetText(loser.stats.wins .. "W - " .. loser.stats.losses .. "L")
-                    record:SetTextColor(0.7, 0.7, 0.7)
-                    
-                    betCount = betCount + 1
-                end
+                table.sort(winners, function(a, b) return a.net > b.net end)
+                table.sort(losers, function(a, b) return a.net > b.net end)
                 
-                yOffset = yOffset + 50
+                -- Display side-by-side columns
+                local maxRows = math.max(#winners, #losers)
+                
+                for i = 1, maxRows do
+                    -- Winner column (left)
+                    if winners[i] then
+                        local winner = winners[i]
+                        local winFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
+                        winFrame:SetSize(230, 45)
+                        winFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 5, -yOffset)
+                        winFrame:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 8, insets = { left = 3, right = 3, top = 3, bottom = 3 }})
+                        winFrame:SetBackdropColor(0.05, 0.15, 0.05, 0.7)
+                        winFrame:SetBackdropBorderColor(0.2, 0.6, 0.2, 0.8)
+                        
+                        local name = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        name:SetPoint("TOPLEFT", winFrame, "TOPLEFT", 8, -5)
+                        name:SetText(GetPlayerBaseName(winner.name))
+                        name:SetTextColor(0.9, 0.9, 0.9)
+                        
+                        local gold = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        gold:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+                        gold:SetText(COLOR_GREEN .. "+" .. winner.net .. "g" .. COLOR_RESET)
+                        gold:SetTextColor(0.5, 1, 0.5)
+                        
+                        local record = winFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        record:SetPoint("TOPLEFT", gold, "BOTTOMLEFT", 0, -2)
+                        record:SetText(winner.stats.wins .. "W - " .. winner.stats.losses .. "L")
+                        record:SetTextColor(0.7, 0.7, 0.7)
+                        
+                        betCount = betCount + 1
+                    end
+                    
+                    -- Loser column (right)
+                    if losers[i] then
+                        local loser = losers[i]
+                        local loseFrame = CreateFrame("Frame", nil, self.betListContent, "BackdropTemplate")
+                        loseFrame:SetSize(230, 45)
+                        loseFrame:SetPoint("TOPLEFT", self.betListContent, "TOPLEFT", 265, -yOffset)
+                        loseFrame:SetBackdrop({bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 8, insets = { left = 3, right = 3, top = 3, bottom = 3 }})
+                        loseFrame:SetBackdropColor(0.15, 0.05, 0.05, 0.7)
+                        loseFrame:SetBackdropBorderColor(0.6, 0.2, 0.2, 0.8)
+                        
+                        local name = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        name:SetPoint("TOPLEFT", loseFrame, "TOPLEFT", 8, -5)
+                        name:SetText(GetPlayerBaseName(loser.name))
+                        name:SetTextColor(0.9, 0.9, 0.9)
+                        
+                        local gold = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        gold:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+                        gold:SetText(COLOR_RED .. "-" .. loser.net .. "g" .. COLOR_RESET)
+                        gold:SetTextColor(1, 0.5, 0.5)
+                        
+                        local record = loseFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        record:SetPoint("TOPLEFT", gold, "BOTTOMLEFT", 0, -2)
+                        record:SetText(loser.stats.wins .. "W - " .. loser.stats.losses .. "L")
+                        record:SetTextColor(0.7, 0.7, 0.7)
+                        
+                        betCount = betCount + 1
+                    end
+                    
+                    yOffset = yOffset + 50
+                end
             end
         end
         
