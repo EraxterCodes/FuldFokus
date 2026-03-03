@@ -2428,6 +2428,11 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
         if myPending and myPending.betId == betId and isTargeted then
             FuldStonks.pendingBets[playerFullName] = nil
             print(COLOR_YELLOW .. "FuldStonks" .. COLOR_RESET .. " Your pending bet was removed by the bet creator.")
+            
+            -- Update UI immediately
+            if FuldStonks.frame and FuldStonks.frame:IsShown() then
+                FuldStonks.frame:UpdateBetList()
+            end
             RefreshOpenInspectDialog()
         end
 
@@ -2859,14 +2864,9 @@ function FuldStonks:CreateBet(betData)
     -- Don't wait for the next 5s sync cycle for better UX
     self:BroadcastStateSync()
     
-    -- Force UI update if frame exists
-    if self.frame then
-        -- Schedule update slightly delayed to ensure DB is saved
-        C_Timer.After(0.1, function()
-            if self.frame and self.frame.UpdateBetList then
-                self.frame:UpdateBetList()
-            end
-        end)
+    -- Force UI update immediately
+    if self.frame and self.frame.UpdateBetList then
+        self.frame:UpdateBetList()
     end
     
     return betId
@@ -3355,6 +3355,13 @@ function FuldStonks:ResolveBet(betId, winningOption)
     
     FuldStonksDB.betHistory[betId] = bet
     FuldStonksDB.activeBets[betId] = nil
+    
+    -- Clear any pending bets for this bet
+    for playerName, pendingBet in pairs(self.pendingBets) do
+        if pendingBet.betId == betId then
+            self.pendingBets[playerName] = nil
+        end
+    end
     
     -- Immediately broadcast state so bet disappears for everyone
     self:BroadcastStateSync()
