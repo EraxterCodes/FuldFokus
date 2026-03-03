@@ -2267,11 +2267,8 @@ local function OnAddonMessageReceived(prefix, message, channel, sender)
     
     local msgType, senderVersion, arg1, arg2, arg3, arg4, arg5 = DeserializeMessage(message)
     
-    -- Version check: Only accept messages from same addon version
+    -- Version check: Only accept messages from same addon version (silently ignore mismatches)
     if senderVersion ~= FuldStonks.version then
-        if FuldStonksDB.debug == true then
-            DebugPrint("Ignoring message from " .. GetPlayerBaseName(sender) .. " (version " .. senderVersion .. ", expected " .. FuldStonks.version .. ")", "VERSION")
-        end
         return
     end
     
