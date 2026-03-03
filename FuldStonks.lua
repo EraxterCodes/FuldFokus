@@ -1428,7 +1428,6 @@ function FuldStonks:ShowBetInspectDialog(betId)
         passwordDialog.input:SetPoint("TOPLEFT", passwordDialog.label, "BOTTOMLEFT", 0, -8)
         passwordDialog.input:SetAutoFocus(true)
         passwordDialog.input:SetMaxLetters(32)
-        passwordDialog.input:SetPasswordMask("*")
         
         passwordDialog.confirmButton = CreateFrame("Button", nil, passwordDialog, "UIPanelButtonTemplate")
         passwordDialog.confirmButton:SetSize(80, 24)
