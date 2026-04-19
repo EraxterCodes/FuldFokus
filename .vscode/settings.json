@@ -54,6 +54,7 @@
         "Settings",
         "StaticPopupDialogs",
         "LE_PARTY_CATEGORY_INSTANCE",
-        "StaticPopup_Show"
+        "StaticPopup_Show",
+        "UIParent"
     ]
 }
